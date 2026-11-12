@@ -463,6 +463,7 @@ if (storedKey()) { $('#gmKey').value = storedKey(); loadGoogle(storedKey()); }
 const poiLayer = L.layerGroup().addTo(map);
 const highlightLayer = L.layerGroup().addTo(map);
 const resultLayer = L.layerGroup().addTo(map);
+const meLayer = L.layerGroup().addTo(map); // eigener Standort
 
 // ---------- Formular ----------
 let conditions = [
@@ -513,7 +514,7 @@ function setStatus(content, isError = false) {
 
 function setBusy(busy) {
   $('#go').disabled = busy;
-  $('#searchView').disabled = busy;
+  $('#nearMe').disabled = busy;
   $('#go').textContent = busy ? 'Suche läuft …' : 'Suchen';
   document.body.classList.toggle('loading', busy); // Fortschrittsbalken
 }
@@ -740,7 +741,33 @@ setSheet('half', { sync: true });
 // ---------- Suche ----------
 let current = { results: [], conds: [] };
 
-async function runSearch(useMapView) {
+// ---------- Eigener Standort ----------
+const NEAR_ME_M = 2000; // Suchradius „Um mich herum“
+
+function locate() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error('Dein Browser kann den Standort nicht bestimmen.'));
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy }),
+      err => reject(new Error(
+        err.code === 1 ? 'Standortfreigabe abgelehnt. Auf dem iPhone: Einstellungen → Datenschutz → Ortungsdienste → Safari-Websites (bzw. BetterMaps) erlauben.'
+        : err.code === 3 ? 'Der Standort konnte nicht rechtzeitig bestimmt werden. Bitte nochmal versuchen.'
+        : 'Der Standort ist gerade nicht verfügbar.')),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+  });
+}
+
+// Blauer Punkt mit Genauigkeitskreis, wie bei Google Maps
+function showMe(me) {
+  meLayer.clearLayers();
+  if (me.acc && me.acc < 1500) {
+    L.circle([me.lat, me.lon], { radius: me.acc, color: '#4285f4', weight: 0, fillOpacity: 0.15, interactive: false }).addTo(meLayer);
+  }
+  L.circleMarker([me.lat, me.lon], { radius: 8, color: '#fff', weight: 2.5, fillColor: '#4285f4', fillOpacity: 1 })
+    .bindTooltip('Du bist hier').addTo(meLayer);
+}
+
+async function runSearch(nearMe) {
   setBusy(true);
   showSkeleton();
   try {
@@ -752,12 +779,16 @@ async function runSearch(useMapView) {
       return { ...r, radius: c.radius, color: COLORS[conditions.indexOf(c) % COLORS.length] };
     });
 
-    let bbox, where, polygons = null;
-    if (useMapView) {
-      const b = map.getBounds();
-      bbox = { s: b.getSouth(), n: b.getNorth(), w: b.getWest(), e: b.getEast() };
-      where = 'im Kartenausschnitt';
+    let bbox, where, polygons = null, me = null;
+    if (nearMe) {
+      setLoading('Bestimme deinen Standort …');
+      me = await locate();
+      showMe(me);
+      bbox = expandBbox({ s: me.lat, n: me.lat, w: me.lon, e: me.lon }, NEAR_ME_M);
+      where = 'um dich herum';
+      map.fitBounds([[bbox.s, bbox.w], [bbox.n, bbox.e]]);
     } else {
+      meLayer.clearLayers();
       const place = $('#place').value.trim();
       if (!place) throw new Error('Bitte einen Ort eingeben.');
       setLoading('Suche Ort …');
@@ -786,7 +817,8 @@ async function runSearch(useMapView) {
     }
     if (!data) data = await osmData(mainCat, conds, bbox);
 
-    const mains = data.mains.filter(p => inBbox(p, bbox) && (!polygons || inPolygons(p, polygons)));
+    const mains = data.mains.filter(p => inBbox(p, bbox) && (!polygons || inPolygons(p, polygons)) &&
+      (!me || haversine(me, p) <= NEAR_ME_M)); // um mich herum: echter Kreis statt Rechteck
     const pools = data.pools;
 
     const results = [];
@@ -805,9 +837,15 @@ async function runSearch(useMapView) {
       }
       if (ok) results.push({ ...m, near, score: near.reduce((s, h) => s + h[0].d, 0) });
     }
-    results.sort((a, b) => a.score - b.score || (a.tags.name || '').localeCompare(b.tags.name || ''));
+    if (me) {
+      // um mich herum: nächstgelegene zuerst
+      results.forEach(r => { r.fromMe = haversine(me, r); });
+      results.sort((a, b) => a.fromMe - b.fromMe);
+    } else {
+      results.sort((a, b) => a.score - b.score || (a.tags.name || '').localeCompare(b.tags.name || ''));
+    }
 
-    current = { results, conds, mainCat, source, note };
+    current = { results, conds, mainCat, source, note, me };
     collapseForm(`${mainCat.label} ${where}` + (conds.length ? ` · ${conds.map(c => c.label).join(', ')}` : ''));
     render(mains.length, where);
   } catch (err) {
@@ -896,7 +934,7 @@ function render(totalMain, where) {
       .on('click', () => select(idx, false))
       .addTo(resultLayer);
 
-    const sub = [r.tags.cuisine && r.tags.cuisine.replace(/_/g, ' ').replace(/;/g, ', '), r.tags.kind, ratingText(r.tags), address(r.tags)].filter(Boolean).join(' · ');
+    const sub = [r.fromMe != null && `${fmtDist(r.fromMe)} von dir`, r.tags.cuisine && r.tags.cuisine.replace(/_/g, ' ').replace(/;/g, ', '), r.tags.kind, ratingText(r.tags), address(r.tags)].filter(Boolean).join(' · ');
     const chips = el('div', { className: 'chips' });
     r.near.forEach((hits, i) => chips.append(el('span', { className: 'chip' },
       el('span', { className: 'dot', style: { background: conds[i].color, width: '9px', height: '9px' } }),
@@ -909,7 +947,9 @@ function render(totalMain, where) {
   });
 
   if (results.length) {
-    map.fitBounds(L.latLngBounds(results.map(r => [r.lat, r.lon])).pad(0.15), { maxZoom: 16 });
+    const pts = results.map(r => [r.lat, r.lon]);
+    if (current.me) pts.push([current.me.lat, current.me.lon]); // eigenen Standort mit ins Bild
+    map.fitBounds(L.latLngBounds(pts).pad(0.15), { maxZoom: 16 });
   }
 }
 
@@ -947,4 +987,4 @@ function select(idx, fromList) {
 
 // ---------- Events ----------
 $('#form').addEventListener('submit', e => { e.preventDefault(); runSearch(false); });
-$('#searchView').addEventListener('click', () => runSearch(true));
+$('#nearMe').addEventListener('click', () => runSearch(true));
