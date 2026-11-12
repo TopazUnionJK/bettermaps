@@ -14,7 +14,7 @@
 
 * { box-sizing: border-box; }
 
-html, body { height: 100%; margin: 0; }
+html, body { height: 100%; margin: 0; background: var(--bg); }
 [hidden] { display: none !important; }
 
 body {
@@ -49,9 +49,9 @@ body {
 #grip { display: none; }
 
 /* ---------- Ladeanimation ---------- */
-#progress { position: absolute; top: 0; left: 0; right: 0; height: 3px; overflow: hidden; opacity: 0; transition: opacity .2s; z-index: 2; pointer-events: none; }
+#progress { position: absolute; top: 0; left: 0; right: 0; height: 3px; overflow: hidden; opacity: 0; visibility: hidden; transition: opacity .2s, visibility .2s; z-index: 2; pointer-events: none; }
 #progress span { position: absolute; top: 0; bottom: 0; width: 40%; border-radius: 3px; background: var(--accent); animation: progress 1.15s ease-in-out infinite; }
-body.loading #progress { opacity: 1; }
+body.loading #progress { opacity: 1; visibility: visible; }
 @keyframes progress { from { left: -40%; } to { left: 100%; } }
 
 .spinner { display: inline-block; width: 15px; height: 15px; margin-right: 9px; vertical-align: -2px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .75s linear infinite; }
@@ -208,6 +208,13 @@ footer { color: #80868b; font-size: 12px; padding-top: 8px; }
   header h1 { font-size: 20px; }
   .actions { flex-direction: column; }
   .leaflet-bottom { bottom: 18px; }
+}
+
+/* Als installierte App (Vollbild): Kartenelemente unter der iPhone-Statusleiste wegrücken */
+@media (display-mode: standalone) {
+  .leaflet-top { top: env(safe-area-inset-top, 0px); }
+  .leaflet-left { left: env(safe-area-inset-left, 0px); }
+  .leaflet-right { right: env(safe-area-inset-right, 0px); }
 }
 
 /* Touch-Geräte: 16px verhindert das automatische Hineinzoomen von iOS, größere Tippflächen */
