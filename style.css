@@ -177,22 +177,22 @@ footer { color: #80868b; font-size: 12px; padding-top: 8px; }
 .popup div { margin-top: 3px; }
 .popup .links { margin-top: 8px; display: flex; gap: 12px; flex-wrap: wrap; }
 
-/* ---------- Handy und Tablet hochkant: Karte hinten, Inhalt als verschiebbares Blatt ----------
-   Drei Stufen (per JavaScript, siehe "Bottom Sheet" in app.js):
-   peek = Karte im Vollbild · half = Karte oben, Blatt unten · full = Blatt verdeckt die Karte */
+/* ---------- Handy und Tablet hochkant ----------
+   Die Seite selbst scrollt (kein innerer Scrollbereich) – nur dann blendet Safari auf dem
+   iPhone beim Scrollen seine Leisten aus und lässt den Inhalt darunter durchscheinen.
+   Die Karte steht fest oben, das Blatt (#panel) beginnt darunter und schiebt sich beim
+   Hochscrollen über die Karte. Stufe "peek" (Karte im Vollbild) setzt app.js per transform. */
 @media (max-width: 760px) {
-  body { display: block; overflow: hidden; }
-  #map { position: fixed; top: 0; left: 0; right: 0; height: 42dvh; }
+  body { display: block; height: auto; min-height: 100lvh; }
+  #map { position: fixed; top: 0; left: 0; right: 0; height: 42svh; }
   #panel {
-    position: fixed; inset: 0; z-index: 1001;
-    width: 100%; height: 100dvh;
+    position: relative; z-index: 1001;
+    width: 100%; min-height: 100lvh;
+    margin-top: calc(42svh - 18px);
     border: 0; border-radius: 20px 20px 0 0;
     box-shadow: 0 -6px 20px rgba(0, 0, 0, .5);
-    transform: translateY(calc(42dvh - 18px));
-    transition: transform .3s cubic-bezier(.2, .8, .2, 1), border-radius .3s;
-    will-change: transform;
+    transition: transform .3s cubic-bezier(.2, .8, .2, 1);
   }
-  #panel[data-state="full"] { border-radius: 0; box-shadow: none; padding-top: env(safe-area-inset-top); }
   #grip {
     display: block; flex: none; width: 100%; height: 26px; min-height: 26px; padding: 0;
     background: transparent; border: 0; border-radius: 0; touch-action: none; cursor: grab;
@@ -200,10 +200,10 @@ footer { color: #80868b; font-size: 12px; padding-top: 8px; }
   #grip::before { content: ""; display: block; width: 36px; height: 4px; margin: 0 auto; border-radius: 2px; background: #5f6368; }
   #progress { top: 24px; }
   #sheetBody {
-    overflow: hidden; overscroll-behavior: contain;
-    padding: 0 max(14px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    overflow: visible;
+    /* unten Luft, damit der letzte Treffer über Safaris schwebende Leiste scrollen kann */
+    padding: 0 max(14px, env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
   }
-  #panel[data-state="full"] #sheetBody { overflow-y: auto; -webkit-overflow-scrolling: touch; }
   header { margin-bottom: 12px; }
   header h1 { font-size: 20px; }
   .actions { flex-direction: column; }
@@ -212,6 +212,13 @@ footer { color: #80868b; font-size: 12px; padding-top: 8px; }
 
 /* Als installierte App (Vollbild): Kartenelemente unter der iPhone-Statusleiste wegrücken */
 @media (display-mode: standalone) {
+  /* halb durchsichtige Fläche hinter der Statusleiste, wenn die Liste darunter scrollt */
+  body::before {
+    content: ""; position: fixed; top: 0; left: 0; right: 0; z-index: 1002;
+    height: env(safe-area-inset-top, 0px); pointer-events: none;
+    background: rgba(31, 31, 31, .72);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4);
+  }
   .leaflet-top { top: env(safe-area-inset-top, 0px); }
   .leaflet-left { left: env(safe-area-inset-left, 0px); }
   .leaflet-right { right: env(safe-area-inset-right, 0px); }

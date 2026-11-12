@@ -461,59 +461,43 @@ $('#editSearch').onclick = expandForm;
 narrow.addEventListener('change', expandForm);
 
 // ---------- Bottom Sheet (nur schmale Bildschirme) ----------
-// Das Blatt (#panel) liegt über der Karte und rastet in drei Stufen ein:
-//   full = verdeckt die Karte, Liste scrollt · half = Karte oben, Blatt unten · peek = Karte im Vollbild
-// Bedienung: am Griff ziehen oder tippen; in der Liste nach oben wischen schiebt die Karte weg,
-// am Listenanfang nach unten wischen holt sie zurück und – nochmal – ins Vollbild.
-const sheet = $('#panel'), scroller = $('#sheetBody'), grip = $('#grip'), mapEl = $('#map');
-const SHEET_ORDER = ['full', 'half', 'peek'];
-const SHEET_PEEK = 100;   // sichtbare Höhe des Blatts im Karten-Vollbild
-const SHEET_OVERLAP = 18; // so weit ragt das Blatt über den unteren Kartenrand
-let sheetState = 'half', sheetY = 0, mapResizeTimer;
+// Die Seite selbst scrollt – nur so blendet Safari auf dem iPhone seine Leisten beim Scrollen aus.
+//   half = Ausgangslage: Karte oben, Blatt darunter · hochscrollen = Blatt schiebt sich über die Karte
+//   peek = Karte im Vollbild: ganz oben am Griff (oder im Blatt) nach unten ziehen; Tipp/hochziehen holt es zurück
+const sheet = $('#panel'), grip = $('#grip'), mapEl = $('#map');
+const SHEET_PEEK = 110; // sichtbare Höhe des Blatts im Karten-Vollbild
+let sheetState = 'half', sheetOffset = 0, mapResizeTimer;
 
-function sheetPoints() {
-  const H = window.innerHeight;
-  return { full: 0, half: Math.round(H * 0.42) - SHEET_OVERLAP, peek: H - SHEET_PEEK };
-}
+const peekOffset = () => Math.max(0, window.innerHeight - SHEET_PEEK - sheet.offsetTop);
 
 function setSheet(state, { sync = false } = {}) {
   clearTimeout(mapResizeTimer);
   if (!narrow.matches) {
     sheet.style.transform = sheet.style.transition = mapEl.style.height = '';
+    sheetState = 'half';
     return;
   }
   sheetState = state;
-  sheetY = sheetPoints()[state];
   sheet.dataset.state = state;
+  sheetOffset = state === 'peek' ? peekOffset() : 0;
   sheet.style.transition = '';
-  sheet.style.transform = `translateY(${sheetY}px)`;
-  if (state === 'full') return; // Karte ist verdeckt, Größe egal
-  // Karte auf den sichtbaren Bereich zuschneiden. Wird sie kleiner, erst nach der
-  // Animation – sonst blitzt unter ihr kurz der Hintergrund auf.
-  const height = sheetY + SHEET_OVERLAP;
-  const apply = () => { mapEl.style.height = height + 'px'; map.invalidateSize({ animate: false }); };
-  if (sync || height >= mapEl.offsetHeight) apply();
-  else mapResizeTimer = setTimeout(apply, 300);
-}
-
-// Listeneintrag in den sichtbaren Teil des Blatts holen (auf der mittleren Stufe ist das nur die obere Hälfte)
-function revealItem(li) {
-  if (!narrow.matches) return li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  const visible = window.innerHeight - sheetY - grip.offsetHeight;
-  const top = li.offsetTop - scroller.scrollTop;
-  if (top < 0 || top + li.offsetHeight > visible) scroller.scrollTop = li.offsetTop - 8;
-}
-
-function stepSheet(dir) { // dir -1 = Blatt nach oben, +1 = nach unten
-  const i = SHEET_ORDER.indexOf(sheetState) + dir;
-  if (SHEET_ORDER[i]) setSheet(SHEET_ORDER[i]);
+  sheet.style.transform = sheetOffset ? `translateY(${sheetOffset}px)` : '';
+  if (state === 'peek') {
+    // Karte sofort auf volle Höhe, damit beim Herunterschieben nichts leer aufblitzt
+    mapEl.style.height = window.innerHeight + 'px';
+    map.invalidateSize({ animate: false });
+  } else if (mapEl.style.height) {
+    // Karte erst nach der Animation wieder verkleinern
+    const apply = () => { mapEl.style.height = ''; map.invalidateSize({ animate: false }); };
+    if (sync) apply(); else mapResizeTimer = setTimeout(apply, 300);
+  }
 }
 
 let drag = null;
 sheet.addEventListener('touchstart', e => {
   if (!narrow.matches || e.touches.length !== 1) return;
   const y = e.touches[0].clientY;
-  drag = { y0: y, start: sheetY, from: sheetState, onGrip: grip.contains(e.target), active: false, lastY: y, lastT: e.timeStamp, v: 0 };
+  drag = { y0: y, start: sheetOffset, from: sheetState, active: false, lastY: y, lastT: e.timeStamp, v: 0 };
 }, { passive: true });
 
 sheet.addEventListener('touchmove', e => {
@@ -522,16 +506,18 @@ sheet.addEventListener('touchmove', e => {
   if (!drag.active) {
     const dy = y - drag.y0;
     if (Math.abs(dy) < 6) return;
-    // Ist das Blatt ganz oben, gehört die Geste der Liste – außer am Listenanfang nach unten.
-    const moveSheet = drag.onGrip || sheetState !== 'full' || (scroller.scrollTop <= 0 && dy > 0);
+    // Das Blatt selbst bewegen wir nur im Karten-Vollbild oder ganz oben beim Herunterziehen;
+    // alles andere ist normales Scrollen der Seite (dabei blendet Safari seine Leisten aus).
+    const moveSheet = sheetState === 'peek' || (window.scrollY <= 0 && dy > 0);
     if (!moveSheet) { drag = null; return; }
     drag.active = true;
     drag.y0 = y;
     sheet.style.transition = 'none';
   }
   e.preventDefault();
-  sheetY = Math.max(0, Math.min(sheetPoints().peek, drag.start + y - drag.y0));
-  sheet.style.transform = `translateY(${sheetY}px)`;
+  sheetOffset = Math.max(0, Math.min(peekOffset(), drag.start + y - drag.y0));
+  sheet.style.transform = `translateY(${sheetOffset}px)`;
+  if (sheetOffset > 0 && !mapEl.style.height) { mapEl.style.height = window.innerHeight + 'px'; map.invalidateSize({ animate: false }); }
   const dt = e.timeStamp - drag.lastT;
   if (dt > 0) drag.v = (y - drag.lastY) / dt; // px/ms, positiv = nach unten
   drag.lastY = y; drag.lastT = e.timeStamp;
@@ -539,41 +525,40 @@ sheet.addEventListener('touchmove', e => {
 
 function endDrag() {
   if (!drag?.active) { drag = null; return; }
-  const pts = sheetPoints();
-  let target;
-  if (Math.abs(drag.v) > 0.35) { // Schwung: eine Stufe in Wischrichtung
-    target = SHEET_ORDER[SHEET_ORDER.indexOf(drag.from) + (drag.v > 0 ? 1 : -1)] || drag.from;
-  } else {                       // sonst die nächstgelegene Stufe
-    target = SHEET_ORDER.reduce((a, b) => (Math.abs(pts[b] - sheetY) < Math.abs(pts[a] - sheetY) ? b : a));
-  }
+  const target = Math.abs(drag.v) > 0.35
+    ? (drag.v > 0 ? 'peek' : 'half')                        // Schwung entscheidet
+    : (sheetOffset > peekOffset() / 2 ? 'peek' : 'half');    // sonst die nähere Stufe
   drag = null;
   setSheet(target);
 }
 sheet.addEventListener('touchend', endDrag);
 sheet.addEventListener('touchcancel', endDrag);
 
-// Tipp auf den Griff: Karte groß ↔ Mitte ↔ Liste groß
-grip.addEventListener('click', () => setSheet(sheetState === 'half' ? 'full' : 'half'));
-
-// Mausrad/Trackpad (schmales Fenster am Rechner)
-let lastWheel = 0;
-sheet.addEventListener('wheel', e => {
-  if (!narrow.matches) return;
-  const up = e.deltaY > 0; // Inhalt nach oben schieben
-  if (sheetState === 'full' && (up || scroller.scrollTop > 0)) return; // normales Scrollen der Liste
-  e.preventDefault();
-  if (e.timeStamp - lastWheel < 450 || Math.abs(e.deltaY) < 4) return;
-  lastWheel = e.timeStamp;
-  stepSheet(up ? -1 : 1);
-}, { passive: false });
-
-// Beim Tippen in ein Feld das Blatt ganz öffnen, damit die Tastatur nichts verdeckt
-scroller.addEventListener('focusin', e => {
-  if (narrow.matches && e.target.matches('input') && sheetState !== 'full') setSheet('full');
+// Tipp auf den Griff: Vollbild-Karte → Ausgangslage; Ausgangslage → Liste groß; Liste → Karte zeigen
+grip.addEventListener('click', () => {
+  if (sheetState === 'peek') return setSheet('half');
+  if (window.scrollY > 0) window.scrollTo({ top: 0, behavior: 'smooth' });
+  else window.scrollTo({ top: sheet.offsetTop, behavior: 'smooth' });
 });
 
+// Mausrad/Trackpad (schmales Fenster am Rechner): ganz oben weiter "hochscrollen" = Karte im Vollbild
+let lastWheel = 0;
+window.addEventListener('wheel', e => {
+  if (!narrow.matches) return;
+  const intoPeek = sheetState === 'half' && window.scrollY <= 0 && e.deltaY < 0;
+  const outOfPeek = sheetState === 'peek' && e.deltaY > 0;
+  if (!intoPeek && !outOfPeek) return; // normales Scrollen der Seite
+  e.preventDefault();
+  if (e.timeStamp - lastWheel < 450) return;
+  lastWheel = e.timeStamp;
+  setSheet(intoPeek ? 'peek' : 'half');
+}, { passive: false });
+
+// Falls die Seite im Karten-Vollbild doch gescrollt wird (z. B. Tastatur), zurück in die Ausgangslage
+window.addEventListener('scroll', () => { if (sheetState === 'peek' && window.scrollY > 4) setSheet('half', { sync: true }); }, { passive: true });
+
 narrow.addEventListener('change', () => { setSheet('half', { sync: true }); map.invalidateSize(); });
-window.addEventListener('resize', () => setSheet(sheetState, { sync: true }));
+window.addEventListener('resize', () => { if (sheetState === 'peek') setSheet('peek', { sync: true }); });
 setSheet('half', { sync: true });
 
 // ---------- Suche ----------
@@ -718,7 +703,7 @@ function render(totalMain, where) {
   const list = $('#results');
   list.replaceChildren();
   // Handy: Blatt auf die mittlere Stufe, damit Karte und erste Treffer zusammen sichtbar sind
-  scroller.scrollTop = 0;
+  window.scrollTo(0, 0);
   setSheet('half', { sync: true });
   results.forEach((r, idx) => {
     r.marker = L.circleMarker([r.lat, r.lon], { radius: 9, color: '#fff', weight: 2, fillColor: MAIN_COLOR, fillOpacity: 1 })
@@ -761,8 +746,7 @@ function select(idx, fromList) {
 
   if (fromList) {
     // Handy: Karte wieder zeigen, falls das Blatt sie gerade verdeckt
-    if (sheetState === 'full') setSheet('half', { sync: true });
-    revealItem(r.li);
+    if (narrow.matches && window.scrollY > 0) window.scrollTo({ top: 0, behavior: 'smooth' }); // Karte freilegen
     // Ohne Animation schwenken: sonst überschreibt sie das automatische Einpassen des Popups
     // und es ragt auf kleinen Karten (Handy) oben aus dem Bild.
     map.stop(); // eine noch laufende Kartenanimation würde die Position verfälschen
@@ -771,8 +755,8 @@ function select(idx, fromList) {
     const pop = r.marker.getPopup().getElement()?.getBoundingClientRect();
     const box = map.getContainer().getBoundingClientRect();
     if (pop && pop.top < box.top + 8) map.panBy([0, pop.top - box.top - 8], { animate: false });
-  } else {
-    revealItem(r.li);
+  } else if (!narrow.matches) {
+    r.li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 }
 
