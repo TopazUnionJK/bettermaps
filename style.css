@@ -1,0 +1,183 @@
+/* Erscheinungsbild angelehnt an Google Maps im Dark Mode (iPhone) */
+:root {
+  color-scheme: dark;
+  --bg: #1f1f1f;        /* Grundfläche (Trefferliste) */
+  --surface: #2b2c2f;   /* Karten/Flächen, z. B. Suchkarte */
+  --surface2: #3a3b3f;  /* Eingabefelder, Chips */
+  --fg: #e8eaed;
+  --muted: #9aa0a6;
+  --line: #3c4043;
+  --accent: #8ab4f8;
+  --accent-fg: #202124;
+  --danger: #f28b82;
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; margin: 0; }
+[hidden] { display: none !important; }
+
+body {
+  height: 100dvh;
+  display: flex;
+  font: 15px/1.45 -apple-system, "SF Pro Text", "Google Sans", Roboto, system-ui, "Segoe UI", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+#panel {
+  width: 410px;
+  max-width: 100%;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--bg);
+  border-right: 1px solid var(--line);
+  padding: 18px 16px 10px;
+}
+#panel > * { flex-shrink: 0; }
+
+#map { flex: 1; min-width: 0; background: #17181a; }
+
+header { margin-bottom: 14px; }
+header h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+header p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+
+/* ---------- Suchkarte: hebt sich als eigene Fläche von der Trefferliste ab ---------- */
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 14px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .45);
+}
+.row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 10px; }
+
+label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 500; color: var(--muted); padding-left: 2px; }
+
+input, select, button {
+  font: inherit;
+  font-size: 15px;
+  color: var(--fg);
+  border: 1px solid transparent;
+  border-radius: 22px;
+  padding: 9px 14px;
+  background: var(--surface2);
+  min-width: 0;
+}
+input::placeholder { color: #80868b; }
+input:focus, select:focus, button:focus-visible { outline: none; border-color: var(--accent); }
+
+fieldset { border: 0; border-top: 1px solid var(--line); padding: 10px 0 0; margin: 0; min-width: 0; }
+legend { float: left; width: 100%; font-size: 12px; font-weight: 500; color: var(--muted); padding: 0 0 8px 2px; }
+#conds { clear: both; }
+
+.cond { display: grid; grid-template-columns: 12px 1fr 96px 36px; gap: 8px; align-items: center; margin-bottom: 8px; }
+.cond > * { min-width: 0; }
+.dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; }
+.cond .rm { padding: 8px 0; color: var(--muted); background: transparent; cursor: pointer; }
+.cond .rm:hover { color: var(--danger); }
+
+button { cursor: pointer; }
+button[type="submit"] { background: var(--accent); color: var(--accent-fg); font-weight: 600; flex: 1; }
+button[disabled] { opacity: .55; cursor: progress; }
+.ghost { background: transparent; border-color: var(--line); color: var(--accent); }
+.ghost:hover { background: var(--surface2); }
+#addCond { width: 100%; border-style: dashed; }
+.actions { display: flex; gap: 8px; }
+
+/* Zusammengeklappte Suche: Suchleiste wie in Google Maps */
+#editSearch {
+  display: flex; gap: 10px; align-items: center; text-align: left;
+  background: var(--surface); border: 1px solid var(--line); color: var(--fg);
+  border-radius: 26px; padding: 12px 16px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .45);
+}
+#editSearch::before { content: ""; flex: none; width: 15px; height: 15px; border: 2px solid var(--muted); border-radius: 50%; box-shadow: 6px 6px 0 -5px var(--muted); margin-right: 2px; }
+#editSearch .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+#editSearch .edit { color: var(--accent); flex: none; font-weight: 500; }
+
+/* ---------- Trefferliste: flach, mit Trennlinien ---------- */
+#status { flex: none; margin: 20px 2px 0; padding-bottom: 10px; font-size: 14px; color: var(--muted); min-height: 20px; border-bottom: 1px solid var(--line); }
+#status:empty { border-bottom: 0; }
+#status.error { color: var(--danger); }
+#status strong { color: var(--fg); font-weight: 600; }
+
+#results { list-style: none; margin: 0; padding: 0; flex: 1 0 auto; }
+#results li { padding: 14px 6px; border-bottom: 1px solid var(--line); border-radius: 0; cursor: pointer; }
+#results li:hover { background: #26272a; }
+#results li.active { background: #283142; box-shadow: inset 3px 0 0 var(--accent); }
+.r-name { font-size: 16px; font-weight: 500; }
+.r-sub { color: var(--muted); font-size: 13px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; color: var(--fg); background: var(--surface2); border-radius: 999px; padding: 3px 10px 3px 8px;
+}
+
+#mapSettings { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; font-size: 13px; }
+#mapSettings summary { cursor: pointer; color: var(--muted); }
+#mapSettings p { margin: 8px 0; color: var(--muted); }
+.keyrow { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; margin-bottom: 4px; }
+#gmMsg.error { color: var(--danger); }
+
+footer { color: #80868b; font-size: 12px; padding-top: 8px; }
+
+/* ---------- Karte im dunklen Stil ---------- */
+.osm-tiles { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.88) saturate(.55); }
+.leaflet-container { font: inherit; background: #17181a; }
+.leaflet-container a { color: var(--accent); }
+.leaflet-bar { border: 0 !important; box-shadow: 0 2px 8px rgba(0, 0, 0, .5) !important; border-radius: 12px !important; overflow: hidden; }
+.leaflet-bar a, .leaflet-bar a:hover { background: var(--surface); color: var(--fg); border-bottom-color: var(--line); }
+.leaflet-bar a.leaflet-disabled { background: var(--surface); color: #5f6368; }
+.leaflet-control-layers { background: var(--surface); color: var(--fg); border: 0 !important; border-radius: 12px !important; box-shadow: 0 2px 8px rgba(0, 0, 0, .5) !important; }
+.leaflet-control-layers-toggle { filter: invert(1) brightness(1.6); }
+.leaflet-control-attribution { background: rgba(31, 31, 31, .75) !important; color: var(--muted) !important; }
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface); color: var(--fg); box-shadow: 0 4px 18px rgba(0, 0, 0, .6); }
+.leaflet-popup-content-wrapper { border-radius: 16px; }
+.leaflet-container a.leaflet-popup-close-button { color: var(--muted); }
+.leaflet-tooltip { background: var(--surface); color: var(--fg); border-color: var(--line); }
+.leaflet-tooltip-top::before { border-top-color: var(--surface); }
+.leaflet-tooltip-bottom::before { border-bottom-color: var(--surface); }
+.leaflet-tooltip-left::before { border-left-color: var(--surface); }
+.leaflet-tooltip-right::before { border-right-color: var(--surface); }
+
+.popup b { font-size: 15px; font-weight: 600; }
+.popup div { margin-top: 3px; }
+.popup .links { margin-top: 8px; display: flex; gap: 12px; flex-wrap: wrap; }
+
+/* ---------- Handy und Tablet hochkant: Karte oben, Inhalt als Bottom Sheet ---------- */
+@media (max-width: 760px) {
+  body { flex-direction: column-reverse; }
+  #map { flex: none; height: 42dvh; }
+  #panel {
+    position: relative; z-index: 1001;
+    width: 100%; flex: 1; min-height: 0;
+    margin-top: -18px; border: 0; border-radius: 20px 20px 0 0;
+    box-shadow: 0 -6px 20px rgba(0, 0, 0, .5);
+    padding: 22px max(14px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  }
+  /* Griff wie bei den Google-Maps-Karten */
+  #panel::before { content: ""; position: absolute; top: 8px; left: 50%; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: #5f6368; }
+  header { margin-bottom: 12px; }
+  header h1 { font-size: 20px; }
+  .actions { flex-direction: column; }
+  .leaflet-bottom { bottom: 18px; }
+}
+
+/* Touch-Geräte: 16px verhindert das automatische Hineinzoomen von iOS, größere Tippflächen */
+@media (pointer: coarse) {
+  input, select, button { font-size: 16px; min-height: 44px; }
+  .cond { grid-template-columns: 12px 1fr 100px 40px; gap: 6px; }
+  .cond select { padding-left: 10px; padding-right: 4px; }
+  .cond .rm { min-width: 0; padding: 0; }
+  .chip { font-size: 13.5px; padding: 4px 11px 4px 9px; }
+  .leaflet-popup-content { font-size: 15px; }
+  .popup .links a { padding: 6px 0; }
+}

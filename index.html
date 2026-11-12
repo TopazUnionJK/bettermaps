@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="BetterMaps">
+  <meta name="theme-color" content="#1f1f1f">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>BetterMaps – Suche mit Umgebungs-Bedingungen</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside id="panel">
+    <header>
+      <h1>BetterMaps</h1>
+      <p>Orte finden, bei denen auch die Umgebung passt.</p>
+    </header>
+
+    <button type="button" id="editSearch" class="ghost" hidden></button>
+
+    <form id="form">
+      <div class="row2">
+        <label>Was?
+          <input id="main" value="Restaurant" list="whatList" placeholder="z. B. Restaurant, Pizza, Eisdiele …" autocomplete="off">
+        </label>
+        <label>Wo?
+          <input id="place" value="Rosenheim" placeholder="Stadt, Ort, Stadtteil …" autocomplete="off">
+        </label>
+      </div>
+      <datalist id="whatList"></datalist>
+
+      <fieldset>
+        <legend>In der Nähe muss es geben</legend>
+        <div id="conds"></div>
+        <button type="button" id="addCond" class="ghost">+ Bedingung hinzufügen</button>
+      </fieldset>
+
+      <div class="actions">
+        <button type="submit" id="go">Suchen</button>
+        <button type="button" id="searchView" class="ghost">Im Kartenausschnitt suchen</button>
+      </div>
+    </form>
+
+    <div id="status" role="status"></div>
+    <ol id="results"></ol>
+
+    <details id="mapSettings">
+      <summary>Kartendienst: <span id="mapProvider">OpenStreetMap</span></summary>
+      <p>Für die Google-Maps-Karte brauchst du einen eigenen API-Schlüssel
+        („Maps JavaScript API“ in der Google Cloud Console). Er wird nur in diesem Browser gespeichert.</p>
+      <div class="keyrow">
+        <input id="gmKey" type="password" placeholder="Google Maps API-Schlüssel" autocomplete="off">
+        <button type="button" id="gmSave">Speichern</button>
+        <button type="button" id="gmClear" class="ghost" title="Schlüssel entfernen">✕</button>
+      </div>
+      <div id="gmMsg" class="r-sub"></div>
+    </details>
+
+    <footer>Daten: © OpenStreetMap-Mitwirkende · Entfernungen sind Luftlinie</footer>
+  </aside>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.gridlayer.googlemutant@0.14.1/dist/Leaflet.GoogleMutant.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
