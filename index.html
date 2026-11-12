@@ -13,7 +13,10 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <aside id="panel">
+  <aside id="panel" data-state="half">
+    <button type="button" id="grip" aria-label="Bereich vergrößern oder verkleinern"></button>
+    <div id="progress" aria-hidden="true"><span></span></div>
+    <div id="sheetBody">
     <header>
       <h1>BetterMaps</h1>
       <p>Orte finden, bei denen auch die Umgebung passt.</p>
@@ -60,6 +63,7 @@
     </details>
 
     <footer>Daten: © OpenStreetMap-Mitwirkende · Entfernungen sind Luftlinie</footer>
+    </div>
   </aside>
 
   <div id="map"></div>

@@ -338,6 +338,17 @@ function setStatus(content, isError = false) {
 function setBusy(busy) {
   $('#go').disabled = busy;
   $('#searchView').disabled = busy;
+  $('#go').textContent = busy ? 'Suche läuft …' : 'Suchen';
+  document.body.classList.toggle('loading', busy); // Fortschrittsbalken
+}
+
+// Status mit Lade-Kringel
+const setLoading = text => setStatus([el('span', { className: 'spinner' }), text]);
+
+// Platzhalter-Zeilen, solange die Treffer laden
+function showSkeleton() {
+  $('#results').replaceChildren(...Array.from({ length: 4 }, () =>
+    el('li', { className: 'skeleton' }, el('i'), el('i'), el('i'))));
 }
 
 // ---------- Datenquellen ----------
@@ -449,12 +460,128 @@ function expandForm() {
 $('#editSearch').onclick = expandForm;
 narrow.addEventListener('change', expandForm);
 
+// ---------- Bottom Sheet (nur schmale Bildschirme) ----------
+// Das Blatt (#panel) liegt über der Karte und rastet in drei Stufen ein:
+//   full = verdeckt die Karte, Liste scrollt · half = Karte oben, Blatt unten · peek = Karte im Vollbild
+// Bedienung: am Griff ziehen oder tippen; in der Liste nach oben wischen schiebt die Karte weg,
+// am Listenanfang nach unten wischen holt sie zurück und – nochmal – ins Vollbild.
+const sheet = $('#panel'), scroller = $('#sheetBody'), grip = $('#grip'), mapEl = $('#map');
+const SHEET_ORDER = ['full', 'half', 'peek'];
+const SHEET_PEEK = 100;   // sichtbare Höhe des Blatts im Karten-Vollbild
+const SHEET_OVERLAP = 18; // so weit ragt das Blatt über den unteren Kartenrand
+let sheetState = 'half', sheetY = 0, mapResizeTimer;
+
+function sheetPoints() {
+  const H = window.innerHeight;
+  return { full: 0, half: Math.round(H * 0.42) - SHEET_OVERLAP, peek: H - SHEET_PEEK };
+}
+
+function setSheet(state, { sync = false } = {}) {
+  clearTimeout(mapResizeTimer);
+  if (!narrow.matches) {
+    sheet.style.transform = sheet.style.transition = mapEl.style.height = '';
+    return;
+  }
+  sheetState = state;
+  sheetY = sheetPoints()[state];
+  sheet.dataset.state = state;
+  sheet.style.transition = '';
+  sheet.style.transform = `translateY(${sheetY}px)`;
+  if (state === 'full') return; // Karte ist verdeckt, Größe egal
+  // Karte auf den sichtbaren Bereich zuschneiden. Wird sie kleiner, erst nach der
+  // Animation – sonst blitzt unter ihr kurz der Hintergrund auf.
+  const height = sheetY + SHEET_OVERLAP;
+  const apply = () => { mapEl.style.height = height + 'px'; map.invalidateSize({ animate: false }); };
+  if (sync || height >= mapEl.offsetHeight) apply();
+  else mapResizeTimer = setTimeout(apply, 300);
+}
+
+// Listeneintrag in den sichtbaren Teil des Blatts holen (auf der mittleren Stufe ist das nur die obere Hälfte)
+function revealItem(li) {
+  if (!narrow.matches) return li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  const visible = window.innerHeight - sheetY - grip.offsetHeight;
+  const top = li.offsetTop - scroller.scrollTop;
+  if (top < 0 || top + li.offsetHeight > visible) scroller.scrollTop = li.offsetTop - 8;
+}
+
+function stepSheet(dir) { // dir -1 = Blatt nach oben, +1 = nach unten
+  const i = SHEET_ORDER.indexOf(sheetState) + dir;
+  if (SHEET_ORDER[i]) setSheet(SHEET_ORDER[i]);
+}
+
+let drag = null;
+sheet.addEventListener('touchstart', e => {
+  if (!narrow.matches || e.touches.length !== 1) return;
+  const y = e.touches[0].clientY;
+  drag = { y0: y, start: sheetY, from: sheetState, onGrip: grip.contains(e.target), active: false, lastY: y, lastT: e.timeStamp, v: 0 };
+}, { passive: true });
+
+sheet.addEventListener('touchmove', e => {
+  if (!drag) return;
+  const y = e.touches[0].clientY;
+  if (!drag.active) {
+    const dy = y - drag.y0;
+    if (Math.abs(dy) < 6) return;
+    // Ist das Blatt ganz oben, gehört die Geste der Liste – außer am Listenanfang nach unten.
+    const moveSheet = drag.onGrip || sheetState !== 'full' || (scroller.scrollTop <= 0 && dy > 0);
+    if (!moveSheet) { drag = null; return; }
+    drag.active = true;
+    drag.y0 = y;
+    sheet.style.transition = 'none';
+  }
+  e.preventDefault();
+  sheetY = Math.max(0, Math.min(sheetPoints().peek, drag.start + y - drag.y0));
+  sheet.style.transform = `translateY(${sheetY}px)`;
+  const dt = e.timeStamp - drag.lastT;
+  if (dt > 0) drag.v = (y - drag.lastY) / dt; // px/ms, positiv = nach unten
+  drag.lastY = y; drag.lastT = e.timeStamp;
+}, { passive: false });
+
+function endDrag() {
+  if (!drag?.active) { drag = null; return; }
+  const pts = sheetPoints();
+  let target;
+  if (Math.abs(drag.v) > 0.35) { // Schwung: eine Stufe in Wischrichtung
+    target = SHEET_ORDER[SHEET_ORDER.indexOf(drag.from) + (drag.v > 0 ? 1 : -1)] || drag.from;
+  } else {                       // sonst die nächstgelegene Stufe
+    target = SHEET_ORDER.reduce((a, b) => (Math.abs(pts[b] - sheetY) < Math.abs(pts[a] - sheetY) ? b : a));
+  }
+  drag = null;
+  setSheet(target);
+}
+sheet.addEventListener('touchend', endDrag);
+sheet.addEventListener('touchcancel', endDrag);
+
+// Tipp auf den Griff: Karte groß ↔ Mitte ↔ Liste groß
+grip.addEventListener('click', () => setSheet(sheetState === 'half' ? 'full' : 'half'));
+
+// Mausrad/Trackpad (schmales Fenster am Rechner)
+let lastWheel = 0;
+sheet.addEventListener('wheel', e => {
+  if (!narrow.matches) return;
+  const up = e.deltaY > 0; // Inhalt nach oben schieben
+  if (sheetState === 'full' && (up || scroller.scrollTop > 0)) return; // normales Scrollen der Liste
+  e.preventDefault();
+  if (e.timeStamp - lastWheel < 450 || Math.abs(e.deltaY) < 4) return;
+  lastWheel = e.timeStamp;
+  stepSheet(up ? -1 : 1);
+}, { passive: false });
+
+// Beim Tippen in ein Feld das Blatt ganz öffnen, damit die Tastatur nichts verdeckt
+scroller.addEventListener('focusin', e => {
+  if (narrow.matches && e.target.matches('input') && sheetState !== 'full') setSheet('full');
+});
+
+narrow.addEventListener('change', () => { setSheet('half', { sync: true }); map.invalidateSize(); });
+window.addEventListener('resize', () => setSheet(sheetState, { sync: true }));
+setSheet('half', { sync: true });
+
 // ---------- Suche ----------
 let current = { results: [], conds: [] };
 
 async function runSearch(useMapView) {
   setBusy(true);
-  $('#results').replaceChildren();
+  showSkeleton();
   try {
     const mainCat = resolve($('#main').value);
     if (!mainCat) throw new Error('Bitte eingeben, was du suchst.');
@@ -472,7 +599,7 @@ async function runSearch(useMapView) {
     } else {
       const place = $('#place').value.trim();
       if (!place) throw new Error('Bitte einen Ort eingeben.');
-      setStatus('Suche Ort …');
+      setLoading('Suche Ort …');
       const g = await geocode(place);
       bbox = g.bbox;
       polygons = g.polygons;
@@ -485,7 +612,7 @@ async function runSearch(useMapView) {
       throw new Error(`Der Bereich ist zu groß (${Math.round(diagKm)} km Diagonale, max. ${MAX_DIAGONAL_KM} km). Bitte einen kleineren Ort wählen oder näher heranzoomen.`);
     }
 
-    setStatus('Lade OpenStreetMap-Daten … (kann bei ausgelasteten Servern bis zu einer Minute dauern)');
+    setLoading('Lade OpenStreetMap-Daten … (kann bei ausgelasteten Servern bis zu einer Minute dauern)');
     const elements = await overpass(buildQuery(mainCat, bbox, conds));
 
     const points = [];
@@ -522,6 +649,7 @@ async function runSearch(useMapView) {
     render(mains.length, where);
   } catch (err) {
     resultLayer.clearLayers(); poiLayer.clearLayers(); highlightLayer.clearLayers();
+    $('#results').replaceChildren();
     expandForm();
     setStatus(err.message || String(err), true);
   } finally {
@@ -588,6 +716,10 @@ function render(totalMain, where) {
   })));
 
   const list = $('#results');
+  list.replaceChildren();
+  // Handy: Blatt auf die mittlere Stufe, damit Karte und erste Treffer zusammen sichtbar sind
+  scroller.scrollTop = 0;
+  setSheet('half', { sync: true });
   results.forEach((r, idx) => {
     r.marker = L.circleMarker([r.lat, r.lon], { radius: 9, color: '#fff', weight: 2, fillColor: MAIN_COLOR, fillOpacity: 1 })
       .bindPopup(() => popupContent(r))
@@ -628,6 +760,9 @@ function select(idx, fromList) {
   });
 
   if (fromList) {
+    // Handy: Karte wieder zeigen, falls das Blatt sie gerade verdeckt
+    if (sheetState === 'full') setSheet('half', { sync: true });
+    revealItem(r.li);
     // Ohne Animation schwenken: sonst überschreibt sie das automatische Einpassen des Popups
     // und es ragt auf kleinen Karten (Handy) oben aus dem Bild.
     map.stop(); // eine noch laufende Kartenanimation würde die Position verfälschen
@@ -637,7 +772,7 @@ function select(idx, fromList) {
     const box = map.getContainer().getBoundingClientRect();
     if (pop && pop.top < box.top + 8) map.panBy([0, pop.top - box.top - 8], { animate: false });
   } else {
-    r.li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    revealItem(r.li);
   }
 }
 
