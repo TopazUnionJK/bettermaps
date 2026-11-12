@@ -13,7 +13,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>BetterMaps – Suche mit Umgebungs-Bedingungen</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=752ef1c0">
+  <link rel="stylesheet" href="style.css?v=dc44dd43">
 </head>
 <body>
   <aside id="panel" data-state="half">
@@ -65,17 +65,37 @@
     <div id="status" role="status"></div>
     <ol id="results"></ol>
 
-    <details id="mapSettings">
-      <summary>Google: <span id="mapProvider">OpenStreetMap</span></summary>
-      <p>Mit deinem eigenen Google-API-Schlüssel nutzt BetterMaps die Google-Karte und die deutlich
-        schnellere Google-Ortssuche. Dafür in der Google Cloud Console „Maps JavaScript API“ und
-        „Places API (New)“ aktivieren. Der Schlüssel wird nur in diesem Browser gespeichert.</p>
-      <div class="keyrow">
-        <input id="gmKey" type="password" placeholder="Google Maps API-Schlüssel" autocomplete="off">
-        <button type="button" id="gmSave">Speichern</button>
-        <button type="button" id="gmClear" class="ghost" title="Schlüssel entfernen">✕</button>
+    <details id="account">
+      <summary>Konto: <span id="acctState">nicht angemeldet</span></summary>
+      <div id="acctOut">
+        <p>Melde dich mit deiner E-Mail-Adresse an, um zu suchen. Du bekommst eine E-Mail mit einem
+          Anmelde-Link, ein Passwort brauchst du nicht.</p>
+        <form id="loginForm" class="keyrow">
+          <input id="email" type="email" placeholder="deine@email.de" autocomplete="email" required>
+          <button type="submit" id="sendLink">Link senden</button>
+        </form>
+        <form id="codeForm" class="keyrow" hidden>
+          <input id="otp" inputmode="numeric" autocomplete="one-time-code" placeholder="Code aus der E-Mail" maxlength="10">
+          <button type="submit">Anmelden</button>
+        </form>
       </div>
-      <div id="gmMsg" class="r-sub"></div>
+      <div id="acctIn" hidden>
+        <p id="acctInfo"></p>
+        <button type="button" id="logout" class="ghost">Abmelden</button>
+      </div>
+      <div id="acctMsg" class="r-sub"></div>
+
+      <details id="mapSettings">
+        <summary>Eigener Google-Schlüssel · Karte: <span id="mapProvider">OpenStreetMap</span></summary>
+        <p>Nur für Entwickler: Mit einem eigenen Schlüssel fragt die App Google direkt ab, ohne Konto
+          und ohne Tageslimit. Der Schlüssel wird nur in diesem Browser gespeichert.</p>
+        <div class="keyrow">
+          <input id="gmKey" type="password" placeholder="Google Maps API-Schlüssel" autocomplete="off">
+          <button type="button" id="gmSave">Speichern</button>
+          <button type="button" id="gmClear" class="ghost" title="Schlüssel entfernen">✕</button>
+        </div>
+        <div id="gmMsg" class="r-sub"></div>
+      </details>
     </details>
 
     <footer>Daten: © OpenStreetMap-Mitwirkende bzw. Google · Entfernungen sind Luftlinie</footer>
@@ -86,6 +106,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.gridlayer.googlemutant@0.14.1/dist/Leaflet.GoogleMutant.js"></script>
-  <script src="app.js?v=bbac95ab"></script>
+  <script src="vendor/supabase.js"></script>
+  <script src="app.js?v=6f34765f"></script>
 </body>
 </html>

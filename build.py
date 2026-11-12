@@ -37,6 +37,7 @@ sub(r'<link rel="stylesheet" href="https://unpkg\.com/leaflet[^"]*">', f"<style>
 sub(r'<link rel="stylesheet" href="style\.css(\?v=\w+)?">', f"<style>\n{read('style.css')}\n</style>")
 sub(r'<script src="https://unpkg\.com/leaflet@[^"]*"></script>', f"<script>\n{js('vendor/leaflet.js')}\n</script>")
 sub(r'<script src="https://unpkg\.com/leaflet\.gridlayer[^"]*"></script>', f"<script>\n{js('vendor/googlemutant.js')}\n</script>")
+sub(r'<script src="vendor/supabase\.js"></script>', f"<script>\n{js('vendor/supabase.js')}\n</script>")
 sub(r'<script src="app\.js(\?v=\w+)?"></script>', f"<script>\n{js('app.js')}\n</script>")
 
 out = root / "bettermaps-mobil.html"

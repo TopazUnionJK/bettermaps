@@ -320,12 +320,122 @@ function cachePut(key, data) {
   }
 }
 
-// ---------- Datenquelle: Google Places (optional, schnell) oder OpenStreetMap ----------
+// ---------- Konto (Supabase): Anmeldung per E-Mail, Google-Suche über das eigene Backend ----------
+const SB_URL = 'https://icqensripxkuiarkrvsb.supabase.co';
+const SB_KEY = 'sb_publishable_Y0VsKjxvgrJicGVZvPrehw_ivOYfuxF'; // öffentlich, Zugriff regelt das Backend
+const API_URL = SB_URL + '/functions/v1/api';
+const sb = window.supabase?.createClient(SB_URL, SB_KEY, {
+  auth: { flowType: 'implicit', detectSessionInUrl: true, persistSession: true, autoRefreshToken: true },
+});
+let session = null, account = null, cloudMapKeyLoaded = false;
+
+function acctMessage(text, isError = false) {
+  const m = $('#acctMsg');
+  m.textContent = text;
+  m.className = 'r-sub' + (isError ? ' error' : '');
+}
+
+function renderAccount() {
+  const inn = !!session;
+  $('#acctOut').hidden = inn;
+  $('#acctIn').hidden = !inn;
+  if (!inn) { $('#acctState').textContent = storedKey() ? 'eigener Schlüssel' : 'nicht angemeldet'; return; }
+  const email = session.user?.email || '';
+  $('#acctState').textContent = account ? `${account.plan === 'pro' ? 'Pro' : 'Kostenlos'} · ${account.used}/${account.limit} heute` : email;
+  $('#acctInfo').textContent = `Angemeldet als ${email}.` + (account
+    ? ` Tarif: ${account.plan === 'pro' ? 'Pro' : 'Kostenlos'}. Heute ${account.used} von ${account.limit} Google-Abfragen genutzt (eine Suche braucht meist 3 bis 15).`
+    : '');
+}
+
+async function api(path, body) {
+  const { data } = await sb.auth.getSession(); // frischt abgelaufene Tokens selbst auf
+  const token = data.session?.access_token;
+  if (!token) throw new Error('Bitte melde dich an (unten unter „Konto“).');
+  const res = await fetch(API_URL + path, {
+    method: body ? 'POST' : 'GET',
+    headers: { Authorization: 'Bearer ' + token, apikey: SB_KEY, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await res.json().catch(() => ({}));
+  return { res, json };
+}
+
+async function refreshAccount() {
+  if (!session) { account = null; renderAccount(); return; }
+  try {
+    const { res, json } = await api('/me');
+    if (res.ok) {
+      account = json;
+      if (json.mapsKey && !storedKey() && !cloudMapKeyLoaded) { cloudMapKeyLoaded = true; loadGoogle(json.mapsKey); }
+    }
+  } catch { /* offline: später erneut */ }
+  renderAccount();
+}
+
+if (sb) {
+  sb.auth.onAuthStateChange((event, s) => {
+    const was = !!session;
+    session = s;
+    renderAccount();
+    renderSourceToggle();
+    if (s && (!was || event === 'SIGNED_IN')) {
+      // Token aus dem Anmelde-Link nicht in der Adresszeile stehen lassen
+      if (location.hash.includes('access_token')) history.replaceState(null, '', location.pathname + location.search);
+      setTimeout(refreshAccount, 0);
+    }
+  });
+  const hashErr = new URLSearchParams(location.hash.slice(1)).get('error_description');
+  if (hashErr) {
+    acctMessage('Anmeldung fehlgeschlagen: ' + hashErr.replace(/\+/g, ' ') + '. Bitte neuen Link anfordern.', true);
+    $('#account').open = true;
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+} else {
+  acctMessage('Anmeldung nicht verfügbar (Bibliothek konnte nicht geladen werden).', true);
+}
+renderAccount();
+
+let loginEmail = '';
+$('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!sb) return;
+  loginEmail = $('#email').value.trim();
+  $('#sendLink').disabled = true;
+  acctMessage('Sende E-Mail …');
+  const { error } = await sb.auth.signInWithOtp({
+    email: loginEmail,
+    options: { emailRedirectTo: location.origin + location.pathname },
+  });
+  $('#sendLink').disabled = false;
+  if (error) return acctMessage(/rate|seconds/i.test(error.message)
+    ? 'Bitte kurz warten, bevor du eine neue E-Mail anforderst.' : 'Fehler: ' + error.message, true);
+  $('#codeForm').hidden = false;
+  acctMessage(`E-Mail an ${loginEmail} ist unterwegs. Tippe auf den Link darin – oder gib hier den Code ein, falls die E-Mail einen enthält.`);
+});
+$('#codeForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const token = $('#otp').value.replace(/\s/g, '');
+  if (!token || !loginEmail) return;
+  const { error } = await sb.auth.verifyOtp({ email: loginEmail, token, type: 'email' });
+  if (error) return acctMessage('Der Code passt nicht oder ist abgelaufen.', true);
+  $('#codeForm').hidden = true;
+  $('#otp').value = '';
+  acctMessage('');
+});
+$('#logout').onclick = async () => {
+  await sb?.auth.signOut();
+  account = null;
+  acctMessage('Abgemeldet.');
+};
+
+// ---------- Datenquelle: eigener Google-Schlüssel, Backend (Konto) oder OpenStreetMap ----------
 const SRC_STORE = 'bettermaps.source';
 
 function dataSource() {
-  if (!storedKey()) return 'osm';
-  try { return localStorage.getItem(SRC_STORE) || 'google'; } catch { return 'google'; }
+  if (storedKey()) {
+    try { return localStorage.getItem(SRC_STORE) || 'google'; } catch { return 'google'; }
+  }
+  return session ? 'cloud' : 'none';
 }
 
 function renderSourceToggle() {
@@ -375,41 +485,60 @@ function googlePoint(p) {
   };
 }
 
-async function googleFetch(body, fields) {
+// Eine Ergebnisseite: mit eigenem Schlüssel direkt bei Google, sonst über das Backend.
+async function googleFetch(text, b, fields, pageToken) {
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(G_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': storedKey(), 'X-Goog-FieldMask': fields },
-      body: JSON.stringify(body),
-    });
-    const json = await res.json().catch(() => ({}));
+    let res, json;
+    if (dataSource() === 'cloud') {
+      ({ res, json } = await api('/search', { textQuery: text, rect: b, fields: fields === G_FIELDS_MAIN ? 'main' : 'near', pageToken }));
+      if (json.quota && account) { account.used = json.quota.used; account.limit = json.quota.limit; renderAccount(); }
+      if (res.status === 401) throw new Error('Deine Anmeldung ist abgelaufen – bitte unten unter „Konto“ neu anmelden.');
+      if (res.status === 429 && json.limit) {
+        if (account) { account.used = json.used; account.limit = json.limit; renderAccount(); }
+        throw new Error(`${json.error} Morgen geht es weiter${json.plan === 'pro' ? '' : ' – oder mit dem Pro-Tarif mehr pro Tag'}.`);
+      }
+      if (!res.ok && json.error && typeof json.error === 'string') throw new Error(json.error);
+    } else {
+      const body = {
+        textQuery: text, languageCode: 'de', regionCode: 'DE', pageSize: 20,
+        locationRestriction: { rectangle: { low: { latitude: b.s, longitude: b.w }, high: { latitude: b.n, longitude: b.e } } },
+        ...(pageToken ? { pageToken } : {}),
+      };
+      res = await fetch(G_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': storedKey(), 'X-Goog-FieldMask': fields },
+        body: JSON.stringify(body),
+      });
+      json = await res.json().catch(() => ({}));
+    }
     if (res.ok) return json;
     // Ein frischer Seiten-Token ist manchmal noch nicht gültig – kurz warten, einmal wiederholen.
-    if (body.pageToken && res.status === 400 && attempt === 0) { await new Promise(r => setTimeout(r, 1500)); continue; }
+    if (pageToken && res.status === 400 && attempt === 0) { await new Promise(r => setTimeout(r, 1500)); continue; }
     throw new Error(googleError(json, res.status));
   }
 }
 
-// Ein Suchbegriff in einem Rechteck, bis zu 3 Seiten; Ergebnis wird zwischengespeichert.
+// Google-Ergebnisse nur im Arbeitsspeicher halten (Google erlaubt kein dauerhaftes Speichern).
+const gCache = new Map();
+
+// Ein Suchbegriff in einem Rechteck, bis zu 3 Seiten.
 async function googleArea(text, b, fields) {
-  const ck = 'g' + hashKey([text.toLowerCase(), b.s.toFixed(4), b.w.toFixed(4), b.n.toFixed(4), b.e.toFixed(4), fields].join('|'));
-  const cached = cacheGet(ck);
-  if (cached) return cached;
-  const base = {
-    textQuery: text, languageCode: 'de', regionCode: 'DE', pageSize: 20,
-    locationRestriction: { rectangle: { low: { latitude: b.s, longitude: b.w }, high: { latitude: b.n, longitude: b.e } } },
-  };
+  const ck = [text.toLowerCase(), b.s.toFixed(4), b.w.toFixed(4), b.n.toFixed(4), b.e.toFixed(4), fields].join('|');
+  const hit = gCache.get(ck);
+  if (hit && Date.now() - hit.t < CACHE_TTL) return hit.d;
   const places = [];
   let pageToken;
   do {
-    const json = await googleFetch(pageToken ? { ...base, pageToken } : base, fields);
+    const json = await googleFetch(text, b, fields, pageToken);
     places.push(...(json.places || []));
     pageToken = json.nextPageToken;
   } while (pageToken && places.length < G_MAX);
   const points = places.map(googlePoint).filter(Boolean);
-  cachePut(ck, points);
+  gCache.set(ck, { t: Date.now(), d: points });
   return points;
 }
+// Alte, dauerhaft gespeicherte Google-Ergebnisse früherer Versionen entfernen
+try { Object.keys(localStorage).filter(k => k.startsWith(CACHE_PREFIX + 'g')).forEach(k => localStorage.removeItem(k)); } catch { /* egal */ }
 
 // Viertelt das Rechteck, wenn Google das 60er-Limit erreicht (eine Ebene) – damit z. B.
 // Spielplätze in einer Stadt nicht nach den ersten 60 abgeschnitten werden.
@@ -775,6 +904,10 @@ async function runSearch(useMapView) {
   setBusy(true);
   showSkeleton();
   try {
+    if (dataSource() === 'none') {
+      $('#account').open = true;
+      throw new Error('Bitte melde dich zuerst an – unten unter „Konto“, mit deiner E-Mail-Adresse.');
+    }
     const mainCat = resolve($('#main').value);
     if (!mainCat) throw new Error('Bitte eingeben, was du suchst.');
     const conds = conditions.filter(c => c.text.trim()).map((c, i) => {
@@ -813,7 +946,12 @@ async function runSearch(useMapView) {
     }
 
     let data = null, note = '', source = dataSource();
-    if (source === 'google') {
+    if (source === 'cloud') {
+      setLoading('Suche bei Google …');
+      data = await googleData(mainCat, conds, bbox);
+      note = data.note.replace(/ Vollständiger, aber langsamer: OpenStreetMap\./, '');
+      source = 'google';
+    } else if (source === 'google') {
       setLoading('Suche bei Google …');
       try {
         data = await googleData(mainCat, conds, bbox);

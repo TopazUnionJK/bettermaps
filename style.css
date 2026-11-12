@@ -162,10 +162,16 @@ button[disabled] { opacity: .55; cursor: progress; }
   font-size: 12.5px; color: var(--fg); background: var(--surface2); border-radius: 999px; padding: 3px 10px 3px 8px;
 }
 
-#mapSettings { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; font-size: 13px; }
-#mapSettings summary { cursor: pointer; color: var(--muted); }
-#mapSettings p { margin: 8px 0; color: var(--muted); }
+#account { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; font-size: 13px; }
+#account summary { cursor: pointer; color: var(--muted); }
+#account p { margin: 8px 0; color: var(--muted); }
+#account #acctInfo { color: var(--fg); }
+#account form { background: none; box-shadow: none; border: 0; border-radius: 0; padding: 0; margin: 0 0 4px; }
+#acctIn { margin-bottom: 6px; }
+#mapSettings { margin-top: 12px; }
 .keyrow { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; margin-bottom: 4px; }
+#account form.keyrow { grid-template-columns: 1fr auto; display: grid; }
+#account form.keyrow[hidden] { display: none; }
 #gmMsg.error { color: var(--danger); }
 
 footer { color: #80868b; font-size: 12px; padding-top: 8px; }
