@@ -514,7 +514,7 @@ function setStatus(content, isError = false) {
 
 function setBusy(busy) {
   $('#go').disabled = busy;
-  $('#nearMe').disabled = busy;
+  $('#searchView').disabled = busy;
   $('#go').textContent = busy ? 'Suche läuft …' : 'Suchen';
   document.body.classList.toggle('loading', busy); // Fortschrittsbalken
 }
@@ -767,7 +767,11 @@ function showMe(me) {
     .bindTooltip('Du bist hier').addTo(meLayer);
 }
 
-async function runSearch(nearMe) {
+// „Um mich herum“ und ähnliche Eingaben im Wo?-Feld bedeuten: eigener Standort
+const isNearMe = text => /^(um mich( herum)?|in meiner n(ä|ae)he|meine? (n(ä|ae)he|standort)|aktueller standort|hier)$/i.test(text.trim());
+
+async function runSearch(useMapView) {
+  const nearMe = !useMapView && isNearMe($('#place').value);
   setBusy(true);
   showSkeleton();
   try {
@@ -787,6 +791,10 @@ async function runSearch(nearMe) {
       bbox = expandBbox({ s: me.lat, n: me.lat, w: me.lon, e: me.lon }, NEAR_ME_M);
       where = 'um dich herum';
       map.fitBounds([[bbox.s, bbox.w], [bbox.n, bbox.e]]);
+    } else if (useMapView) {
+      const b = map.getBounds();
+      bbox = { s: b.getSouth(), n: b.getNorth(), w: b.getWest(), e: b.getEast() };
+      where = 'im Kartenausschnitt';
     } else {
       meLayer.clearLayers();
       const place = $('#place').value.trim();
@@ -987,4 +995,5 @@ function select(idx, fromList) {
 
 // ---------- Events ----------
 $('#form').addEventListener('submit', e => { e.preventDefault(); runSearch(false); });
-$('#nearMe').addEventListener('click', () => runSearch(true));
+$('#searchView').addEventListener('click', () => runSearch(true));
+$('#useMe').addEventListener('click', () => { $('#place').value = 'Um mich herum'; });

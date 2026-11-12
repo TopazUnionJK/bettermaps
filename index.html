@@ -13,7 +13,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>BetterMaps – Suche mit Umgebungs-Bedingungen</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="style.css?v=51ee4a71">
+  <link rel="stylesheet" href="style.css?v=752ef1c0">
 </head>
 <body>
   <aside id="panel" data-state="half">
@@ -33,10 +33,14 @@
           <input id="main" value="Restaurant" list="whatList" placeholder="z. B. Restaurant, Pizza, Eisdiele …" autocomplete="off">
         </label>
         <label>Wo?
-          <input id="place" value="Rosenheim" placeholder="Stadt, Ort, Stadtteil …" autocomplete="off">
+          <span class="placeWrap">
+            <input id="place" list="placeList" value="Rosenheim" placeholder="Stadt, Ort, Stadtteil …" autocomplete="off">
+            <button type="button" id="useMe" title="Um mich herum" aria-label="Um mich herum suchen">◎</button>
+          </span>
         </label>
       </div>
       <datalist id="whatList"></datalist>
+      <datalist id="placeList"><option value="Um mich herum"></option></datalist>
 
       <fieldset>
         <legend>In der Nähe muss es geben</legend>
@@ -54,7 +58,7 @@
 
       <div class="actions">
         <button type="submit" id="go">Suchen</button>
-        <button type="button" id="nearMe" class="ghost">◎ Um mich herum suchen</button>
+        <button type="button" id="searchView" class="ghost">Im Kartenausschnitt suchen</button>
       </div>
     </form>
 
@@ -82,6 +86,6 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.gridlayer.googlemutant@0.14.1/dist/Leaflet.GoogleMutant.js"></script>
-  <script src="app.js?v=c395edf7"></script>
+  <script src="app.js?v=bbac95ab"></script>
 </body>
 </html>
