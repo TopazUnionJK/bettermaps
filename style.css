@@ -117,6 +117,12 @@ button[disabled] { opacity: .55; cursor: progress; }
 #addCond { width: 100%; border-style: dashed; }
 .actions { display: flex; gap: 8px; }
 
+/* Umschalter Datenquelle */
+.source { display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 500; color: var(--muted); padding-left: 2px; }
+.seg { display: flex; flex: 1; gap: 3px; padding: 3px; background: var(--surface2); border-radius: 22px; }
+#sourceRow .seg button { flex: 1; min-height: 0; padding: 6px 8px; font-size: 13px; border: 0; border-radius: 18px; background: transparent; color: var(--muted); }
+#sourceRow .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
+
 /* Zusammengeklappte Suche: Suchleiste wie in Google Maps */
 #editSearch {
   display: flex; gap: 10px; align-items: center; text-align: left;

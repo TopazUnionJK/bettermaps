@@ -276,13 +276,189 @@ $('#gmSave').onclick = () => {
   if (!key) return gmMessage('Bitte zuerst einen Schlüssel eintragen.', true);
   try { localStorage.setItem(GM_KEY_STORE, key); } catch { /* privater Modus: gilt nur für diese Sitzung */ }
   loadGoogle(key);
+  renderSourceToggle();
 };
 $('#gmClear').onclick = () => {
   try { localStorage.removeItem(GM_KEY_STORE); } catch { /* egal */ }
   $('#gmKey').value = '';
   useOsm();
   gmMessage('Schlüssel entfernt – es wird wieder OpenStreetMap angezeigt.');
+  renderSourceToggle();
 };
+
+// ---------- Zwischenspeicher (localStorage, 6 Stunden) ----------
+// Gleiche Suchen kommen so sofort zurück – spart Wartezeit und Google-Kontingent.
+const CACHE_PREFIX = 'bettermaps.cache.', CACHE_TTL = 6 * 3600e3, CACHE_MAX = 30;
+
+function hashKey(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return h.toString(36) + s.length.toString(36);
+}
+
+function cacheGet(key) {
+  try {
+    const v = JSON.parse(localStorage.getItem(CACHE_PREFIX + key));
+    if (v && Date.now() - v.t < CACHE_TTL) return v.d;
+  } catch { /* gesperrt oder kaputt: ohne Zwischenspeicher weiter */ }
+  return null;
+}
+
+function cachePut(key, data) {
+  try {
+    const keys = Object.keys(localStorage).filter(k => k.startsWith(CACHE_PREFIX));
+    if (keys.length >= CACHE_MAX) {
+      keys.map(k => [k, (JSON.parse(localStorage.getItem(k)) || {}).t || 0])
+        .sort((a, b) => a[1] - b[1])
+        .slice(0, keys.length - CACHE_MAX + 1)
+        .forEach(([k]) => localStorage.removeItem(k));
+    }
+    localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ t: Date.now(), d: data }));
+  } catch {
+    // Speicher voll: alten Zwischenspeicher leeren, nicht weiter versuchen
+    try { Object.keys(localStorage).filter(k => k.startsWith(CACHE_PREFIX)).forEach(k => localStorage.removeItem(k)); } catch { /* egal */ }
+  }
+}
+
+// ---------- Datenquelle: Google Places (optional, schnell) oder OpenStreetMap ----------
+const SRC_STORE = 'bettermaps.source';
+
+function dataSource() {
+  if (!storedKey()) return 'osm';
+  try { return localStorage.getItem(SRC_STORE) || 'google'; } catch { return 'google'; }
+}
+
+function renderSourceToggle() {
+  const row = $('#sourceRow');
+  row.hidden = !storedKey();
+  const src = dataSource();
+  row.querySelectorAll('button[data-src]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.src === src)));
+}
+$('#sourceRow').addEventListener('click', e => {
+  const b = e.target.closest('button[data-src]');
+  if (!b) return;
+  try { localStorage.setItem(SRC_STORE, b.dataset.src); } catch { /* egal */ }
+  renderSourceToggle();
+});
+renderSourceToggle();
+
+// Google „Text Search (New)“: liefert höchstens 60 Treffer (3 Seiten à 20) je Suchbegriff und Gebiet.
+const G_URL = 'https://places.googleapis.com/v1/places:searchText';
+const G_FIELDS_MAIN = 'places.id,places.displayName,places.location,places.formattedAddress,places.primaryTypeDisplayName,' +
+  'places.rating,places.userRatingCount,places.websiteUri,places.googleMapsUri,places.currentOpeningHours.openNow,nextPageToken';
+const G_FIELDS_NEAR = 'places.id,places.displayName,places.location,nextPageToken'; // günstiger: nur Name + Lage
+const G_MAX = 60;
+
+function googleError(json, status) {
+  const msg = json?.error?.message || `HTTP ${status}`;
+  const reason = JSON.stringify(json?.error?.details || '');
+  if (/SERVICE_DISABLED|has not been used|is disabled/i.test(msg + reason)) return 'Die „Places API (New)“ ist für deinen Google-Schlüssel nicht aktiviert (Google Cloud Console → APIs & Dienste)';
+  if (/API_KEY|API key/i.test(msg + reason)) return 'Google hat den API-Schlüssel abgelehnt';
+  if (/referer|referrer/i.test(msg)) return `Google erlaubt den Schlüssel nicht für ${location.host}`;
+  if (status === 429) return 'Google-Kontingent erschöpft';
+  return 'Google-Suche fehlgeschlagen: ' + msg;
+}
+
+function googlePoint(p) {
+  const loc = p.location;
+  if (!loc) return null;
+  return {
+    id: 'g/' + p.id, lat: loc.latitude, lon: loc.longitude,
+    tags: {
+      name: p.displayName?.text,
+      'addr:full': p.formattedAddress?.replace(/, (Deutschland|Germany|Österreich|Austria|Schweiz|Switzerland)$/, ''),
+      kind: p.primaryTypeDisplayName?.text,
+      rating: p.rating, ratings: p.userRatingCount,
+      website: p.websiteUri, gmaps: p.googleMapsUri,
+      openNow: p.currentOpeningHours?.openNow,
+    },
+  };
+}
+
+async function googleFetch(body, fields) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(G_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': storedKey(), 'X-Goog-FieldMask': fields },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (res.ok) return json;
+    // Ein frischer Seiten-Token ist manchmal noch nicht gültig – kurz warten, einmal wiederholen.
+    if (body.pageToken && res.status === 400 && attempt === 0) { await new Promise(r => setTimeout(r, 1500)); continue; }
+    throw new Error(googleError(json, res.status));
+  }
+}
+
+// Ein Suchbegriff in einem Rechteck, bis zu 3 Seiten; Ergebnis wird zwischengespeichert.
+async function googleArea(text, b, fields) {
+  const ck = 'g' + hashKey([text.toLowerCase(), b.s.toFixed(4), b.w.toFixed(4), b.n.toFixed(4), b.e.toFixed(4), fields].join('|'));
+  const cached = cacheGet(ck);
+  if (cached) return cached;
+  const base = {
+    textQuery: text, languageCode: 'de', regionCode: 'DE', pageSize: 20,
+    locationRestriction: { rectangle: { low: { latitude: b.s, longitude: b.w }, high: { latitude: b.n, longitude: b.e } } },
+  };
+  const places = [];
+  let pageToken;
+  do {
+    const json = await googleFetch(pageToken ? { ...base, pageToken } : base, fields);
+    places.push(...(json.places || []));
+    pageToken = json.nextPageToken;
+  } while (pageToken && places.length < G_MAX);
+  const points = places.map(googlePoint).filter(Boolean);
+  cachePut(ck, points);
+  return points;
+}
+
+// Viertelt das Rechteck, wenn Google das 60er-Limit erreicht (eine Ebene) – damit z. B.
+// Spielplätze in einer Stadt nicht nach den ersten 60 abgeschnitten werden.
+async function googleTerm(text, b, fields, split) {
+  const first = await googleArea(text, b, fields);
+  if (!split || first.length < G_MAX) return { points: first, capped: first.length >= G_MAX };
+  const midLat = (b.s + b.n) / 2, midLon = (b.w + b.e) / 2;
+  const quads = [
+    { s: b.s, n: midLat, w: b.w, e: midLon }, { s: b.s, n: midLat, w: midLon, e: b.e },
+    { s: midLat, n: b.n, w: b.w, e: midLon }, { s: midLat, n: b.n, w: midLon, e: b.e },
+  ];
+  const parts = await Promise.all(quads.map(q => googleArea(text, q, fields)));
+  const byId = new Map([...first, ...parts.flat()].map(p => [p.id, p]));
+  return { points: [...byId.values()], capped: parts.some(p => p.length >= G_MAX) };
+}
+
+async function googleData(mainCat, conds, bbox) {
+  const [m, ...cs] = await Promise.all([
+    googleTerm(mainCat.label, bbox, G_FIELDS_MAIN, false), // Hauptsuche: Top 60 nach Relevanz
+    ...conds.map(c => googleTerm(c.label, expandBbox(bbox, c.radius), G_FIELDS_NEAR, true)),
+  ]);
+  const capped = [m, ...cs].map((r, i) => (r.capped ? (i ? conds[i - 1] : mainCat).label : null)).filter(Boolean);
+  const note = capped.length
+    ? `Google liefert pro Suchbegriff höchstens ${G_MAX} Orte – bei ${capped.map(l => `„${l}“`).join(', ')} fehlen evtl. welche. Vollständiger, aber langsamer: OpenStreetMap.`
+    : '';
+  return { mains: m.points, pools: cs.map(c => c.points), note };
+}
+
+async function osmData(mainCat, conds, bbox) {
+  const query = buildQuery(mainCat, bbox, conds);
+  const ck = 'o' + hashKey(query);
+  let elements = cacheGet(ck);
+  if (!elements) {
+    setLoading('Lade OpenStreetMap-Daten … (kann bei ausgelasteten Servern bis zu einer Minute dauern)');
+    elements = await overpass(query);
+    cachePut(ck, elements);
+  }
+  const points = [];
+  for (const e of elements) {
+    const lat = e.lat ?? e.center?.lat, lon = e.lon ?? e.center?.lon;
+    if (lat == null || lon == null || !e.tags) continue;
+    points.push({ id: `${e.type}/${e.id}`, lat, lon, tags: e.tags });
+  }
+  const isPublic = p => p.tags.access !== 'private' && p.tags.access !== 'no';
+  return {
+    mains: points.filter(p => matches(p.tags, mainCat)),
+    pools: conds.map(c => points.filter(p => matches(p.tags, c) && isPublic(p))),
+  };
+}
 if (storedKey()) { $('#gmKey').value = storedKey(); loadGoogle(storedKey()); }
 const poiLayer = L.layerGroup().addTo(map);
 const highlightLayer = L.layerGroup().addTo(map);
@@ -393,7 +569,7 @@ function buildQuery(mainCat, bbox, conds) {
 // nach anfragen, aber nicht auf einen hängenden warten – nach STAGGER_MS (oder
 // sofort bei einem Fehler) startet zusätzlich der nächste. Die erste gültige
 // Antwort gewinnt, alle anderen Anfragen werden abgebrochen.
-const STAGGER_MS = 2500;
+const STAGGER_MS = 600; // fast parallel: der schnellste Server gewinnt
 const OVERPASS_TIMEOUT_MS = 90000;
 
 function overpass(query) {
@@ -597,19 +773,21 @@ async function runSearch(useMapView) {
       throw new Error(`Der Bereich ist zu groß (${Math.round(diagKm)} km Diagonale, max. ${MAX_DIAGONAL_KM} km). Bitte einen kleineren Ort wählen oder näher heranzoomen.`);
     }
 
-    setLoading('Lade OpenStreetMap-Daten … (kann bei ausgelasteten Servern bis zu einer Minute dauern)');
-    const elements = await overpass(buildQuery(mainCat, bbox, conds));
-
-    const points = [];
-    for (const e of elements) {
-      const lat = e.lat ?? e.center?.lat, lon = e.lon ?? e.center?.lon;
-      if (lat == null || lon == null || !e.tags) continue;
-      points.push({ id: `${e.type}/${e.id}`, lat, lon, tags: e.tags });
+    let data = null, note = '', source = dataSource();
+    if (source === 'google') {
+      setLoading('Suche bei Google …');
+      try {
+        data = await googleData(mainCat, conds, bbox);
+        note = data.note;
+      } catch (err) {
+        note = `${err.message} – stattdessen mit OpenStreetMap gesucht.`;
+        source = 'osm';
+      }
     }
+    if (!data) data = await osmData(mainCat, conds, bbox);
 
-    const mains = points.filter(p => matches(p.tags, mainCat) && inBbox(p, bbox) && (!polygons || inPolygons(p, polygons)));
-    const isPublic = p => p.tags.access !== 'private' && p.tags.access !== 'no';
-    const pools = conds.map(c => points.filter(p => matches(p.tags, c) && isPublic(p)));
+    const mains = data.mains.filter(p => inBbox(p, bbox) && (!polygons || inPolygons(p, polygons)));
+    const pools = data.pools;
 
     const results = [];
     for (const m of mains) {
@@ -629,7 +807,7 @@ async function runSearch(useMapView) {
     }
     results.sort((a, b) => a.score - b.score || (a.tags.name || '').localeCompare(b.tags.name || ''));
 
-    current = { results, conds, mainCat };
+    current = { results, conds, mainCat, source, note };
     collapseForm(`${mainCat.label} ${where}` + (conds.length ? ` · ${conds.map(c => c.label).join(', ')}` : ''));
     render(mains.length, where);
   } catch (err) {
@@ -648,17 +826,22 @@ function displayName(r) {
 }
 
 function address(tags) {
+  if (tags['addr:full']) return tags['addr:full'];
   const street = [tags['addr:street'], tags['addr:housenumber']].filter(Boolean).join(' ');
   const city = [tags['addr:postcode'], tags['addr:city']].filter(Boolean).join(' ');
   return [street, city].filter(Boolean).join(', ');
 }
 
+const ratingText = t => (t.rating ? `★ ${t.rating.toFixed(1).replace('.', ',')}${t.ratings ? ` (${t.ratings})` : ''}` : '');
+
 function popupContent(r) {
   const t = r.tags;
   const box = el('div', { className: 'popup' }, el('b', { textContent: displayName(r) }));
   if (t.cuisine) box.append(el('div', { textContent: t.cuisine.replace(/_/g, ' ').replace(/;/g, ', ') }));
+  if (t.kind || t.rating) box.append(el('div', { textContent: [t.kind, ratingText(t)].filter(Boolean).join(' · ') }));
   if (address(t)) box.append(el('div', { textContent: address(t) }));
   if (t.opening_hours) box.append(el('div', { textContent: '🕑 ' + t.opening_hours }));
+  if (t.openNow != null) box.append(el('div', { textContent: t.openNow ? '🕑 Jetzt geöffnet' : '🕑 Jetzt geschlossen' }));
   r.near.forEach((hits, i) => {
     const c = current.conds[i];
     box.append(el('div', {},
@@ -667,8 +850,9 @@ function popupContent(r) {
   });
   const links = el('div', { className: 'links' });
   const gq = t.name ? `${t.name}, ${address(t) || `${r.lat},${r.lon}`}` : `${r.lat},${r.lon}`;
-  links.append(el('a', { href: 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(gq), target: '_blank', rel: 'noopener', textContent: 'Google Maps' }));
-  links.append(el('a', { href: 'https://www.openstreetmap.org/' + r.id, target: '_blank', rel: 'noopener', textContent: 'OpenStreetMap' }));
+  const gmaps = t.gmaps || 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(gq);
+  links.append(el('a', { href: gmaps, target: '_blank', rel: 'noopener', textContent: 'Google Maps' }));
+  if (!r.id.startsWith('g/')) links.append(el('a', { href: 'https://www.openstreetmap.org/' + r.id, target: '_blank', rel: 'noopener', textContent: 'OpenStreetMap' }));
   const site = t.website || t['contact:website'];
   if (site && /^https?:\/\//i.test(site)) links.append(el('a', { href: site, target: '_blank', rel: 'noopener', textContent: 'Website' }));
   box.append(links);
@@ -684,7 +868,8 @@ function render(totalMain, where) {
   else if (!conds.length) setStatus([el('strong', { textContent: total }), ' gefunden.']);
   else setStatus([el('strong', { textContent: `${results.length} von ${totalMain}` }), ` × ${mainCat.label} ${where} ${results.length === 1 ? 'erfüllt' : 'erfüllen'} alle Bedingungen.`]);
 
-  const fuzzy = [mainCat, ...conds].filter(c => c.fuzzy).map(c => `„${c.label}“`);
+  if (current.note) $('#status').append(el('div', { className: 'r-sub', textContent: current.note }));
+  const fuzzy = current.source === 'osm' ? [mainCat, ...conds].filter(c => c.fuzzy).map(c => `„${c.label}“`) : [];
   if (fuzzy.length) {
     $('#status').append(el('div', { className: 'r-sub', textContent: `${fuzzy.join(', ')} kenne ich nicht als Kategorie – gesucht wurde in Namen, Marken und Stichworten.` }));
   }
@@ -711,7 +896,7 @@ function render(totalMain, where) {
       .on('click', () => select(idx, false))
       .addTo(resultLayer);
 
-    const sub = [r.tags.cuisine && r.tags.cuisine.replace(/_/g, ' ').replace(/;/g, ', '), address(r.tags)].filter(Boolean).join(' · ');
+    const sub = [r.tags.cuisine && r.tags.cuisine.replace(/_/g, ' ').replace(/;/g, ', '), r.tags.kind, ratingText(r.tags), address(r.tags)].filter(Boolean).join(' · ');
     const chips = el('div', { className: 'chips' });
     r.near.forEach((hits, i) => chips.append(el('span', { className: 'chip' },
       el('span', { className: 'dot', style: { background: conds[i].color, width: '9px', height: '9px' } }),
