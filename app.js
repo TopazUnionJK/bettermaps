@@ -671,29 +671,27 @@ const meLayer = L.layerGroup().addTo(map); // eigener Standort
 // ---------- Formular ----------
 let conditions = [{ text: '', radius: 500 }]; // leer starten, leere Bedingungen werden ignoriert
 
-const suggestions = $('#whatList');
-for (const c of CATEGORIES) suggestions.append(el('option', { value: c.label }));
-for (const v of ['Italienisches Restaurant', 'Pizza', 'Sushi', 'Burger']) suggestions.append(el('option', { value: v }));
 
 // Auswahlliste unter einem Eingabefeld: leer = alle Kategorien, mit Text = nur passende.
 // (Ein <datalist> zeigt auf dem iPhone keine Liste, nur Vorschläge über der Tastatur.)
-function categoryMatches(text) {
+function categoryMatches(text, extras = []) {
+  const all = [...CATEGORIES, ...extras.map(label => ({ label, kw: [] }))];
   const q = text.trim().toLowerCase();
-  if (!q) return CATEGORIES.map(c => c.label);
-  const hits = CATEGORIES.filter(c => c.label.toLowerCase().includes(q) ||
+  if (!q) return all.map(c => c.label);
+  const hits = all.filter(c => c.label.toLowerCase().includes(q) ||
     c.kw.some(k => k.replace('=', '').startsWith(q)));
   const starts = c => (c.label.toLowerCase().startsWith(q) ? 0 : 1);
   return hits.sort((a, b) => starts(a) - starts(b)).map(c => c.label);
 }
 
-function attachPicker(input, onPick) {
+function attachPicker(input, onPick, extras = []) {
   const wrap = el('span', { className: 'combo' });
   const list = el('ul', { className: 'picker', hidden: true, role: 'listbox' });
   let active = -1;
   const close = () => { list.hidden = true; active = -1; };
   const choose = label => { input.value = label; onPick(label); close(); input.blur(); };
   const show = () => {
-    const items = categoryMatches(input.value);
+    const items = categoryMatches(input.value, extras);
     if (!items.length || (items.length === 1 && items[0] === input.value)) return close();
     active = -1;
     list.replaceChildren(...items.map(label => el('li', {
@@ -728,6 +726,7 @@ function attachPicker(input, onPick) {
     else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); choose(list.children[active].textContent); }
     else if (e.key === 'Escape') close();
   });
+  input.parentNode?.insertBefore(wrap, input); // steht das Feld schon im Formular, an seiner Stelle einhängen
   wrap.append(input, list);
   return wrap;
 }
@@ -761,6 +760,8 @@ $('#addCond').onclick = () => {
   $('#conds').lastElementChild.querySelector('input').focus();
 };
 renderConditions();
+// „Was?“: dieselbe Liste, dazu ein paar beliebte Küchen
+attachPicker($('#main'), () => {}, ['Italienisches Restaurant', 'Pizza', 'Sushi', 'Burger']);
 
 function setStatus(content, isError = false) {
   const s = $('#status');
