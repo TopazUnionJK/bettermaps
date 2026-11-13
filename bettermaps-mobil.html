@@ -2222,6 +2222,8 @@ if (sb) {
 renderAccount();
 if (location.protocol === 'file:') acctMessage('Anmelden geht nur in der Web-Version: https://topazunionjk.github.io/bettermaps/', true);
 
+// Code-Eingabe erst zeigen, wenn die Anmelde-E-Mail einen Code enthält (braucht eigenen E-Mail-Versand in Supabase).
+const OTP_IN_EMAIL = false;
 let loginEmail = '';
 $('#loginForm').addEventListener('submit', async e => {
   e.preventDefault();
@@ -2236,8 +2238,10 @@ $('#loginForm').addEventListener('submit', async e => {
   $('#sendLink').disabled = false;
   if (error) return acctMessage(/rate|seconds/i.test(error.message)
     ? 'Bitte kurz warten, bevor du eine neue E-Mail anforderst.' : 'Fehler: ' + error.message, true);
-  $('#codeForm').hidden = false;
-  acctMessage(`E-Mail an ${loginEmail} ist unterwegs. Tippe auf den Link darin – oder gib hier den Code ein, falls die E-Mail einen enthält.`);
+  $('#codeForm').hidden = !OTP_IN_EMAIL;
+  acctMessage(OTP_IN_EMAIL
+    ? `E-Mail an ${loginEmail} ist unterwegs. Gib den Code daraus hier ein – oder tippe auf den Link.`
+    : `E-Mail an ${loginEmail} ist unterwegs. Tippe auf den Link darin, um dich anzumelden.`);
 });
 $('#codeForm').addEventListener('submit', async e => {
   e.preventDefault();
