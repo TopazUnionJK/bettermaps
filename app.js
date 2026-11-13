@@ -383,6 +383,9 @@ if (sb) {
     if (s && (!was || event === 'SIGNED_IN')) {
       // Token aus dem Anmelde-Link nicht in der Adresszeile stehen lassen
       if (location.hash.includes('access_token')) history.replaceState(null, '', location.pathname + location.search);
+      // Angemeldet (per Code oder Link): offene Code-Eingabe schließen
+      try { localStorage.removeItem('bm_login_pending'); } catch { /* egal */ }
+      $('#codeForm').hidden = true;
       setTimeout(refreshAccount, 0);
     }
   });
@@ -398,9 +401,22 @@ if (sb) {
 renderAccount();
 if (location.protocol === 'file:') acctMessage('Anmelden geht nur in der Web-Version: https://topazunionjk.github.io/bettermaps/', true);
 
-// Code-Eingabe erst zeigen, wenn die Anmelde-E-Mail einen Code enthält (braucht eigenen E-Mail-Versand in Supabase).
-const OTP_IN_EMAIL = false;
+// Die Anmelde-E-Mail enthält Code und Link (eigener E-Mail-Versand in Supabase, Vorlage „Magic Link“).
+// Mit Code bleibt die Anmeldung in der Homescreen-App, statt in Safari zu landen.
+const OTP_IN_EMAIL = true;
+const PENDING_KEY = 'bm_login_pending';
 let loginEmail = '';
+// iOS lädt die Homescreen-App beim Wechsel zur Mail-App manchmal neu: offene Code-Eingabe wiederherstellen.
+try {
+  const pending = JSON.parse(localStorage.getItem(PENDING_KEY) || 'null');
+  if (OTP_IN_EMAIL && pending && Date.now() - pending.t < 60 * 60 * 1000 && !session) {
+    loginEmail = pending.email;
+    $('#email').value = loginEmail;
+    $('#codeForm').hidden = false;
+    $('#account').open = true;
+    acctMessage(`Gib den Code aus der E-Mail an ${loginEmail} ein.`);
+  }
+} catch { /* egal */ }
 $('#loginForm').addEventListener('submit', async e => {
   e.preventDefault();
   if (!sb) return;
@@ -415,6 +431,8 @@ $('#loginForm').addEventListener('submit', async e => {
   if (error) return acctMessage(/rate|seconds/i.test(error.message)
     ? 'Bitte kurz warten, bevor du eine neue E-Mail anforderst.' : 'Fehler: ' + error.message, true);
   $('#codeForm').hidden = !OTP_IN_EMAIL;
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify({ email: loginEmail, t: Date.now() })); } catch { /* egal */ }
+  if (OTP_IN_EMAIL) $('#otp').focus();
   acctMessage(OTP_IN_EMAIL
     ? `E-Mail an ${loginEmail} ist unterwegs. Gib den Code daraus hier ein – oder tippe auf den Link.`
     : `E-Mail an ${loginEmail} ist unterwegs. Tippe auf den Link darin, um dich anzumelden.`);
@@ -427,6 +445,7 @@ $('#codeForm').addEventListener('submit', async e => {
   if (error) return acctMessage('Der Code passt nicht oder ist abgelaufen.', true);
   $('#codeForm').hidden = true;
   $('#otp').value = '';
+  try { localStorage.removeItem(PENDING_KEY); } catch { /* egal */ }
   acctMessage('');
 });
 $('#logout').onclick = async () => {
