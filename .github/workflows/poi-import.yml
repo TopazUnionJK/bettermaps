@@ -1,0 +1,38 @@
+# Aktualisiert die POI-Datenbank (Bedingungen wie Spielplatz, Ladesäule …) monatlich aus OpenStreetMap.
+# Braucht das Repository-Secret SUPABASE_ACCESS_TOKEN (Supabase → Account → Access Tokens).
+# Von Hand starten: GitHub → Actions → „POI-Import“ → Run workflow.
+name: POI-Import
+
+on:
+  schedule:
+    - cron: '0 3 2 * *' # am 2. jedes Monats, 3 Uhr UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: poi-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: osmium installieren
+        run: sudo apt-get update -q && sudo apt-get install -y -q osmium-tool
+
+      - name: Import DE, AT, CH, IT
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" || { echo "Secret SUPABASE_ACCESS_TOKEN fehlt"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/osm"
+          python3 tools/poi_import.py "$RUNNER_TEMP/osm" germany austria switzerland italy

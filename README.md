@@ -29,12 +29,12 @@ update public.profiles set plan = 'pro', pro_until = now() + interval '1 month'
 where id = (select id from auth.users where email = 'kunde@example.com');
 ```
 
-POI-Datenbank aktualisieren (z. B. monatlich; braucht `brew install osmium-tool` und ca. 9 GB Platz):
+POI-Datenbank aktualisieren: läuft automatisch am 2. jedes Monats über GitHub Actions
+(`.github/workflows/poi-import.yml`, Repository-Secret `SUPABASE_ACCESS_TOKEN` nötig) und lässt sich dort unter
+Actions → „POI-Import“ → „Run workflow“ auch von Hand starten. Lokal (braucht `brew install osmium-tool`):
 
 ```sh
-mkdir -p /tmp/osm && cd /tmp/osm
-for c in germany austria switzerland italy; do curl -L -o $c.osm.pbf https://download.geofabrik.de/europe/$c-latest.osm.pbf; done
-cd - && python3 tools/poi_import.py /tmp/osm germany austria switzerland italy
+python3 tools/poi_import.py /tmp/osm germany austria switzerland italy
 ```
 
 Die Kategorien kommen aus `CATEGORIES` in `app.js`. Neue Kategorien erst nach einem Import nutzbar.

@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Lädt die POIs für die Bedingungen (Spielplatz, Ladesäule, …) aus OpenStreetMap in Supabase.
 
-Voraussetzungen: osmium-tool (brew install osmium-tool), node, npx supabase (eingeloggt).
+Voraussetzungen: osmium-tool, node, npx supabase (eingeloggt oder SUPABASE_ACCESS_TOKEN gesetzt).
+Läuft monatlich automatisch über .github/workflows/poi-import.yml.
 
 Aufruf:
   python3 tools/poi_import.py <arbeitsordner> germany austria switzerland italy
 
-Erwartet <arbeitsordner>/<land>.osm.pbf (von download.geofabrik.de/europe/<land>-latest.osm.pbf).
+Nimmt <arbeitsordner>/<land>.osm.pbf, sonst lädt es die Datei von download.geofabrik.de/europe/<land>-latest.osm.pbf
+selbst und löscht sie nach dem Filtern wieder (so reicht wenig Plattenplatz).
 Die Kategorien kommen direkt aus CATEGORIES in app.js, damit App und Datenbank gleich zählen.
 Geladen wird in private.poi_tile_new; am Ende wird die Tabelle in einem Schritt ausgetauscht,
 die App sieht also nie einen halben Datenstand.
@@ -82,15 +84,22 @@ def run(cmd):
 
 
 def sql_query(sql_or_file, is_file=False):
-    cmd = ['npx', '-y', 'supabase@2.122.1', 'db', 'query', '--project-ref', PROJECT, '--linked']
+    cmd = ['npx', '-y', 'supabase@2.122.1', 'db', 'query', '--project-ref', PROJECT, '--linked',
+           '--agent', 'no', '--output-format', 'json']
     cmd += ['-f', str(sql_or_file)] if is_file else [sql_or_file]
     for attempt in range(4):
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode == 0 and '"_tag":"Error"' not in r.stdout:
             return r.stdout
+
         print('  Fehler, neuer Versuch:', (r.stderr or r.stdout)[-400:], flush=True)
         time.sleep(5 * (attempt + 1))
     raise SystemExit('Abbruch: SQL fehlgeschlagen')
+
+
+def rows(out):
+    """Zeilen aus der JSON-Ausgabe der CLI (Liste der Zeilen)."""
+    return json.loads(out[out.index('['):])
 
 
 def main():
@@ -104,9 +113,15 @@ def main():
 
     for country in countries:
         pbf = work / f'{country}.osm.pbf'
+        downloaded = not pbf.exists()
+        if downloaded:
+            run(['curl', '-sSfL', '--retry', '3', '-o', str(pbf),
+                 f'https://download.geofabrik.de/europe/{country}-latest.osm.pbf'])
         flt = work / f'{country}.poi.pbf'
         geo = work / f'{country}.poi.geojsonseq'
         run(['osmium', 'tags-filter', '--overwrite', '-o', str(flt), str(pbf), *tag_filter_args(cats)])
+        if downloaded:
+            pbf.unlink()
         run(['osmium', 'export', '--overwrite', '-f', 'geojsonseq', '-a', 'type,id',
              '--geometry-types=point,linestring,polygon', '-o', str(geo), str(flt)])
         n = 0
@@ -157,8 +172,7 @@ def main():
         from unnest(array[{labels}]) l where l not in (select label from private.poi_cat);
       select id, label from private.poi_cat;
     """)
-    rows = json.loads(out[out.index('{'):])['rows']
-    ids = {r['label']: r['id'] for r in rows}
+    ids = {r['label']: r['id'] for r in rows(out)}
     tiles = {(ids[cats[c]['label']], key): pts for (c, key), pts in tiles.items()}
     sql_query("""
       drop table if exists private.poi_tile_new;
@@ -196,7 +210,7 @@ def main():
 
     # Vor dem Austausch: passt alles in den kostenlosen Tarif (500 MB)? Sonst alte Daten behalten.
     out = sql_query("select pg_database_size(current_database()) - pg_total_relation_size('private.poi_tile') as after")
-    after = json.loads(out[out.index('{'):])['rows'][0]['after']
+    after = rows(out)[0]['after']
     print(f'Datenbank nach dem Austausch: {after / 1e6:.0f} MB', flush=True)
     if after > 400e6:
         sql_query('drop table private.poi_tile_new')
