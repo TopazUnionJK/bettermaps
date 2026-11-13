@@ -111,6 +111,8 @@ legend { float: left; width: 100%; font-size: 12px; font-weight: 500; color: var
   list-style: none; max-height: 260px; overflow-y: auto; -webkit-overflow-scrolling: touch;
   background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 6px 20px rgba(0, 0, 0, .5); }
 .picker[hidden] { display: none; }
+.picker { touch-action: pan-y; overscroll-behavior: contain; }
+.picker li { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 .picker li { padding: 10px 14px; cursor: pointer; color: var(--fg); font-size: 15px; font-weight: 400; text-transform: none; letter-spacing: normal; }
 .picker li:hover, .picker li.active { background: var(--line); }
 .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; }

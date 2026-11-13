@@ -694,11 +694,7 @@ function attachPicker(input, onPick, extras = []) {
     const items = categoryMatches(input.value, extras);
     if (!items.length || (items.length === 1 && items[0] === input.value)) return close();
     active = -1;
-    list.replaceChildren(...items.map(label => el('li', {
-      textContent: label, role: 'option',
-      onpointerdown: e => e.preventDefault(), // Feld behält den Fokus, bis gewählt ist
-      onclick: () => choose(label),
-    })));
+    list.replaceChildren(...items.map(label => el('li', { textContent: label, role: 'option' })));
     const wasHidden = list.hidden;
     list.hidden = false;
     list.scrollTop = 0;
@@ -718,7 +714,25 @@ function attachPicker(input, onPick, extras = []) {
   input.addEventListener('focus', show);
   input.addEventListener('click', show);
   input.addEventListener('input', show);
-  input.addEventListener('blur', close);
+  // Auswahl beim Loslassen (Maus oder Finger), aber nicht nach dem Scrollen der Liste.
+  // Auf dem iPhone schließt die Tastatur schon beim Antippen und das Feld verliert den Fokus –
+  // deshalb schließt die Liste beim Verlassen des Felds erst kurz danach.
+  let down = null;
+  list.addEventListener('pointerdown', e => {
+    down = { x: e.clientX, y: e.clientY, li: e.target.closest('li') };
+    if (e.pointerType === 'mouse') e.preventDefault(); // Feld behält den Fokus
+  });
+  list.addEventListener('pointerup', e => {
+    const li = e.target.closest('li');
+    if (down && li && li === down.li && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 10) {
+      e.preventDefault();
+      choose(li.textContent);
+    }
+    down = null;
+  });
+  list.addEventListener('pointercancel', () => { down = null; }); // Liste wurde gescrollt
+  document.addEventListener('pointerdown', e => { if (!list.hidden && !wrap.contains(e.target)) close(); });
+  input.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== input && !down) close(); }, 250));
   input.addEventListener('keydown', e => {
     if (list.hidden) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); mark(active + 1); }
