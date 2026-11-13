@@ -12,7 +12,10 @@ Orte finden, bei denen auch die Umgebung passt – z. B. ein Restaurant in Rosen
 - Edge Function `api` (`supabase/functions/api/index.ts`)
   - `GET /me`: Tarif, heutige Nutzung, Kartenschlüssel
   - `POST /search`: eine Google-Ergebnisseite, zählt 1 Abfrage
+  - `POST /near`: Bedingungen (Spielplatz, Ladesäule …) aus der eigenen POI-Datenbank im Umkreis der Treffer, kostenlos
 - Tabellen `profiles` (Tarif `free`/`pro`, `pro_until`) und `usage` (Google-Abfragen pro Nutzer und Tag)
+- POI-Datenbank `private.poi_tile` (OpenStreetMap, Deutschland, Österreich, Schweiz, Italien): kompakt in Kacheln
+  je Kategorie, ca. 150 MB. Außerhalb dieser Länder und bei Freitext-Bedingungen sucht die App bei Google.
 - Limits in `private.settings`: `daily_limit_free`, `daily_limit_pro`, `daily_limit_global` (alle Nutzer zusammen)
 - Secrets der Edge Function:
   - `GOOGLE_PLACES_KEY`: Server-Schlüssel, nur „Places API (New)“ erlaubt
@@ -25,3 +28,13 @@ Nutzer auf Pro setzen (bis ein Zahlungsanbieter angebunden ist):
 update public.profiles set plan = 'pro', pro_until = now() + interval '1 month'
 where id = (select id from auth.users where email = 'kunde@example.com');
 ```
+
+POI-Datenbank aktualisieren (z. B. monatlich; braucht `brew install osmium-tool` und ca. 9 GB Platz):
+
+```sh
+mkdir -p /tmp/osm && cd /tmp/osm
+for c in germany austria switzerland italy; do curl -L -o $c.osm.pbf https://download.geofabrik.de/europe/$c-latest.osm.pbf; done
+cd - && python3 tools/poi_import.py /tmp/osm germany austria switzerland italy
+```
+
+Die Kategorien kommen aus `CATEGORIES` in `app.js`. Neue Kategorien erst nach einem Import nutzbar.

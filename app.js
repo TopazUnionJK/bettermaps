@@ -118,7 +118,7 @@ function resolve(text) {
     const base = cat ? cat.filters : FOOD_FILTERS;
     return { label, filters: base.map(f => ({ ...f, cuisine: { re: cuisine.re } })) };
   }
-  if (cat) return { label, filters: cat.filters };
+  if (cat) return { label, filters: cat.filters, cat: cat.label }; // cat: steht in der eigenen POI-Datenbank
 
   const joined = tokens.join('[ _-]');
   if (joined.length < 2) return null;
@@ -344,7 +344,7 @@ function renderAccount() {
   const email = session.user?.email || '';
   $('#acctState').textContent = account ? `${account.plan === 'pro' ? 'Pro' : 'Kostenlos'} · ${account.used}/${account.limit} heute` : email;
   $('#acctInfo').textContent = `Angemeldet als ${email}.` + (account
-    ? ` Tarif: ${account.plan === 'pro' ? 'Pro' : 'Kostenlos'}. Heute ${account.used} von ${account.limit} Google-Abfragen genutzt (eine Suche braucht je nach Gebiet etwa 3 bis 30).`
+    ? ` Tarif: ${account.plan === 'pro' ? 'Pro' : 'Kostenlos'}. Heute ${account.used} von ${account.limit} Google-Abfragen genutzt (eine Suche braucht meist 1 bis 3; Bedingungen wie Spielplatz oder Ladesäule kosten nichts, nur Freitext-Bedingungen zählen extra).`
     : '');
 }
 
@@ -565,25 +565,61 @@ async function googleTerm(text, b, fields, split) {
 
 let activeSource = 'none'; // für die laufende Suche festgelegt (siehe runSearch)
 
+// Bedingungen mit bekannter Kategorie kommen aus der eigenen OSM-Datenbank im Backend
+// (schnell, kostet keine Google-Abfrage); Freitext-Bedingungen gehen an Google.
+// Liefert null, wenn die Datenbank das Gebiet nicht abdeckt oder nicht erreichbar ist.
+async function dbPools(mains, dbConds) {
+  if (!dbConds.length || !mains.length) return dbConds.map(() => []);
+  try {
+    const { res, json } = await api('/near', {
+      points: mains.map(p => [p.lat, p.lon]),
+      conds: dbConds.map(c => ({ cat: c.cat, radius: c.radius })),
+    });
+    if (!res.ok || !json.covered) return null;
+    return json.pools.map((pool, i) => pool.map(([lat, lon, name], k) => ({ id: `db/${i}/${k}`, lat, lon, tags: { name } })));
+  } catch {
+    return null;
+  }
+}
+
+// Gleiche Art wie die Hauptsuche (z. B. Café mit Café in der Nähe, Bahnhof mit Haltestelle):
+// dann über Google, weil nur dort der Treffer selbst sicher erkannt wird (gleiche ID).
+const tagPairs = c => c.filters.flatMap(f => Object.entries(f).filter(([, v]) => typeof v === 'string').map(([k, v]) => k + '=' + v));
+const overlaps = (a, b) => { const s = new Set(tagPairs(a)); return tagPairs(b).some(t => s.has(t)); };
+
 async function googleData(mainCat, conds, bbox) {
+  const viaDb = conds.map(c => !!(c.cat && session && !overlaps(c, mainCat))); // einmal festlegen
+  const gConds = conds.filter((c, i) => !viaDb[i]);
   // Über das Backend: Vierteln (bis zu 12 Abfragen je Bedingung) nur, wenn das Tageskontingent reicht.
-  let split = true;
-  if (activeSource === 'cloud' && account) {
-    const left = account.limit - account.used, base = 3 * (1 + conds.length);
-    if (left < 1 + conds.length) {
+  const checkQuota = n => {
+    if (activeSource !== 'cloud' || !account) return true;
+    const left = account.limit - account.used;
+    if (left < 1 + n) {
       throw new Error(`Dein Tageskontingent ist fast aufgebraucht (${account.used} von ${account.limit} Google-Abfragen). Morgen geht es weiter.`);
     }
-    split = left >= base + 12 * conds.length;
-  }
-  const [m, ...cs] = await Promise.all([
+    return left >= 3 * (1 + n) + 12 * n;
+  };
+  const split = checkQuota(gConds.length);
+  const term = c => googleTerm(c.label, expandBbox(bbox, c.radius), G_FIELDS_NEAR, split);
+  const [m, ...gs] = await Promise.all([
     googleTerm(mainCat.label, bbox, G_FIELDS_MAIN, false), // Hauptsuche: Top 60 nach Relevanz
-    ...conds.map(c => googleTerm(c.label, expandBbox(bbox, c.radius), G_FIELDS_NEAR, split)),
+    ...gConds.map(term),
   ]);
-  const capped = [m, ...cs].map((r, i) => (r.capped ? (i ? conds[i - 1] : mainCat).label : null)).filter(Boolean);
+  const dbConds = conds.filter((c, i) => viaDb[i]);
+  let db = await dbPools(m.points, dbConds);
+  const extra = []; // Datenbank deckt das Gebiet nicht ab: diese Bedingungen doch bei Google
+  if (!db) {
+    extra.push(...await Promise.all(dbConds.map(term)));
+    db = extra.map(g => g.points);
+  }
+  const gPools = gs.map(g => g.points);
+  const pools = conds.map((c, i) => (viaDb[i] ? db : gPools).shift());
+  const capped = [[m, mainCat], ...gs.map((g, i) => [g, gConds[i]]), ...extra.map((g, i) => [g, dbConds[i]])]
+    .filter(([r]) => r.capped).map(([, c]) => c.label);
   const note = capped.length
     ? `Google liefert pro Suchbegriff höchstens ${G_MAX} Orte – bei ${capped.map(l => `„${l}“`).join(', ')} fehlen evtl. welche. Vollständiger, aber langsamer: OpenStreetMap.`
     : '';
-  return { mains: m.points, pools: cs.map(c => c.points), note };
+  return { mains: m.points, pools, note };
 }
 
 async function osmData(mainCat, conds, bbox) {
