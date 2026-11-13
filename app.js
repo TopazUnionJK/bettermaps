@@ -183,7 +183,7 @@ function expandBbox(b, meters) {
 const inBbox = (p, b) => p.lat >= b.s && p.lat <= b.n && p.lon >= b.w && p.lon <= b.e;
 
 // ---------- Karte ----------
-const map = L.map('map').setView([47.8571, 12.1181], 13);
+const map = L.map('map').setView([49.5, 11], 6); // bis der Standort da ist: Überblick DE/AT/CH/Norditalien
 const osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
   className: 'osm-tiles', // per CSS abgedunkelt
@@ -669,10 +669,7 @@ const resultLayer = L.layerGroup().addTo(map);
 const meLayer = L.layerGroup().addTo(map); // eigener Standort
 
 // ---------- Formular ----------
-let conditions = [
-  { text: 'Spielplatz', radius: 500 },
-  { text: 'E-Ladesäule', radius: 500 },
-];
+let conditions = [{ text: '', radius: 500 }]; // leer starten, leere Bedingungen werden ignoriert
 
 const suggestions = $('#whatList');
 for (const c of CATEGORIES) suggestions.append(el('option', { value: c.label }));
@@ -970,11 +967,18 @@ function showMe(me) {
     .bindTooltip('Du bist hier').addTo(meLayer);
 }
 
+// Beim Start die Karte auf den eigenen Standort legen (ohne Fehlermeldung, falls nicht erlaubt).
+locate().then(me => {
+  if (current.results.length) return; // Nutzer hat schon gesucht
+  showMe(me);
+  map.setView([me.lat, me.lon], 15);
+}).catch(() => { /* bleibt beim Überblick */ });
+
 // „Um mich herum“ und ähnliche Eingaben im Wo?-Feld bedeuten: eigener Standort
 const isNearMe = text => /^(um mich( herum)?|in meiner n(ä|ae)he|meine? (n(ä|ae)he|standort)|aktueller standort|hier)$/i.test(text.trim());
 
 async function runSearch(useMapView) {
-  const nearMe = !useMapView && isNearMe($('#place').value);
+  const nearMe = !useMapView && (isNearMe($('#place').value) || !$('#place').value.trim()); // leer = um mich herum
   setBusy(true);
   showSkeleton();
   try {
@@ -1005,7 +1009,6 @@ async function runSearch(useMapView) {
     } else {
       meLayer.clearLayers();
       const place = $('#place').value.trim();
-      if (!place) throw new Error('Bitte einen Ort eingeben.');
       setLoading('Suche Ort …');
       const g = await geocode(place);
       bbox = g.bbox;
