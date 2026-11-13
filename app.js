@@ -675,12 +675,68 @@ const suggestions = $('#whatList');
 for (const c of CATEGORIES) suggestions.append(el('option', { value: c.label }));
 for (const v of ['Italienisches Restaurant', 'Pizza', 'Sushi', 'Burger']) suggestions.append(el('option', { value: v }));
 
+// Auswahlliste unter einem Eingabefeld: leer = alle Kategorien, mit Text = nur passende.
+// (Ein <datalist> zeigt auf dem iPhone keine Liste, nur Vorschläge über der Tastatur.)
+function categoryMatches(text) {
+  const q = text.trim().toLowerCase();
+  if (!q) return CATEGORIES.map(c => c.label);
+  const hits = CATEGORIES.filter(c => c.label.toLowerCase().includes(q) ||
+    c.kw.some(k => k.replace('=', '').startsWith(q)));
+  const starts = c => (c.label.toLowerCase().startsWith(q) ? 0 : 1);
+  return hits.sort((a, b) => starts(a) - starts(b)).map(c => c.label);
+}
+
+function attachPicker(input, onPick) {
+  const wrap = el('span', { className: 'combo' });
+  const list = el('ul', { className: 'picker', hidden: true, role: 'listbox' });
+  let active = -1;
+  const close = () => { list.hidden = true; active = -1; };
+  const choose = label => { input.value = label; onPick(label); close(); input.blur(); };
+  const show = () => {
+    const items = categoryMatches(input.value);
+    if (!items.length || (items.length === 1 && items[0] === input.value)) return close();
+    active = -1;
+    list.replaceChildren(...items.map(label => el('li', {
+      textContent: label, role: 'option',
+      onpointerdown: e => e.preventDefault(), // Feld behält den Fokus, bis gewählt ist
+      onclick: () => choose(label),
+    })));
+    const wasHidden = list.hidden;
+    list.hidden = false;
+    list.scrollTop = 0;
+    // Handy: Feld nach oben holen, damit Liste und Tastatur Platz haben
+    if (wasHidden && narrow.matches) {
+      const top = input.getBoundingClientRect().top;
+      if (top > 140) window.scrollBy({ top: top - 100, behavior: 'smooth' });
+    }
+  };
+  const mark = i => {
+    const lis = list.children;
+    if (!lis.length) return;
+    active = (i + lis.length) % lis.length;
+    [...lis].forEach((li, k) => li.classList.toggle('active', k === active));
+    lis[active].scrollIntoView({ block: 'nearest' });
+  };
+  input.addEventListener('focus', show);
+  input.addEventListener('click', show);
+  input.addEventListener('input', show);
+  input.addEventListener('blur', close);
+  input.addEventListener('keydown', e => {
+    if (list.hidden) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); mark(active + 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); mark(active - 1); }
+    else if (e.key === 'Enter' && active >= 0) { e.preventDefault(); choose(list.children[active].textContent); }
+    else if (e.key === 'Escape') close();
+  });
+  wrap.append(input, list);
+  return wrap;
+}
+
 function renderConditions() {
   const box = $('#conds');
   box.replaceChildren();
   conditions.forEach((c, i) => {
     const what = el('input', { value: c.text, placeholder: 'z. B. Spielplatz, Bäckerei, dm …', autocomplete: 'off' });
-    what.setAttribute('list', 'whatList');
     what.oninput = () => { c.text = what.value; };
     const radius = el('select', { title: 'Maximale Entfernung' });
     for (const r of RADII) radius.append(el('option', { value: r, textContent: `≤ ${fmtRadius(r)}` }));
@@ -688,7 +744,7 @@ function renderConditions() {
     radius.onchange = () => { c.radius = Number(radius.value); };
     box.append(el('div', { className: 'cond' },
       el('span', { className: 'dot', style: { background: COLORS[i % COLORS.length] } }),
-      what,
+      attachPicker(what, label => { c.text = label; }),
       radius,
       el('button', { type: 'button', className: 'rm ghost', textContent: '✕', title: 'Bedingung entfernen',
         onclick: () => { conditions.splice(i, 1); renderConditions(); } }),

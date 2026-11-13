@@ -105,6 +105,14 @@ legend { float: left; width: 100%; font-size: 12px; font-weight: 500; color: var
 
 .cond { display: grid; grid-template-columns: 12px 1fr 96px 36px; gap: 8px; align-items: center; margin-bottom: 8px; }
 .cond > * { min-width: 0; }
+.combo { position: relative; display: block; }
+.combo input { width: 100%; }
+.picker { position: absolute; z-index: 1000; left: 0; right: -104px; top: calc(100% + 4px); margin: 0; padding: 4px 0;
+  list-style: none; max-height: 260px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 6px 20px rgba(0, 0, 0, .5); }
+.picker[hidden] { display: none; }
+.picker li { padding: 10px 14px; cursor: pointer; color: var(--fg); }
+.picker li:hover, .picker li.active { background: var(--line); }
 .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; }
 .cond .rm { padding: 8px 0; color: var(--muted); background: transparent; cursor: pointer; }
 .cond .rm:hover { color: var(--danger); }
