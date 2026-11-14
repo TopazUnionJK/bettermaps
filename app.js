@@ -1157,6 +1157,27 @@ sheet.addEventListener('focusout', () => {
   }, 300);
 });
 
+// iOS legt die Tastatur über die Seite, ohne sie kleiner zu machen. Darum das Blatt beim Tippen auf
+// den sichtbaren Bereich (visualViewport) begrenzen und das aktive Feld darin sichtbar scrollen.
+const vv = window.visualViewport;
+function revealActive() {
+  const el = document.activeElement;
+  if (!document.body.classList.contains('typing') || !el || !sheetBody.contains(el)) return;
+  const box = sheetBody.getBoundingClientRect(), r = el.getBoundingClientRect();
+  if (r.bottom > box.bottom - 12) sheetBody.scrollTop += r.bottom - box.bottom + 12;
+  else if (r.top < box.top + 12) sheetBody.scrollTop -= box.top + 12 - r.top;
+}
+function fitViewport() {
+  if (!vv) return;
+  const top = Math.max(0, vv.offsetTop);
+  const kb = Math.max(0, window.innerHeight - vv.height - top);
+  document.documentElement.style.setProperty('--vv-top', top + 'px');
+  document.documentElement.style.setProperty('--kb', kb + 'px');
+  requestAnimationFrame(revealActive);
+}
+if (vv) { vv.addEventListener('resize', fitViewport); vv.addEventListener('scroll', fitViewport); }
+sheet.addEventListener('focusin', () => setTimeout(fitViewport, 50));
+
 narrow.addEventListener('change', () => { setSheet('half', { sync: true }); map.invalidateSize(); });
 window.addEventListener('resize', () => { if (sheetState === 'peek') setSheet('peek', { sync: true }); });
 setSheet('half', { sync: true });

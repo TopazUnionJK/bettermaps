@@ -261,7 +261,9 @@ footer { color: var(--faint); font-size: 12px; padding-top: 8px; }
     box-shadow: 0 -6px 20px var(--shadow);
     transition: transform .3s cubic-bezier(.2, .8, .2, 1);
   }
-  body.typing #panel { top: env(safe-area-inset-top, 0px); }
+  /* --vv-top/--kb setzt app.js aus visualViewport: Blatt endet oberhalb der Tastatur */
+  body.typing #panel { top: calc(var(--vv-top, 0px) + env(safe-area-inset-top, 0px)); bottom: var(--kb, 0px); }
+  body.typing #sheetBody { padding-bottom: 16px; }
   #grip {
     display: block; flex: none; width: 100%; height: 26px; min-height: 26px; padding: 0;
     background: transparent; border: 0; border-radius: 0; touch-action: none; cursor: grab;

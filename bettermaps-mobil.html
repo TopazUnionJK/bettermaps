@@ -941,7 +941,9 @@ footer { color: var(--faint); font-size: 12px; padding-top: 8px; }
     box-shadow: 0 -6px 20px var(--shadow);
     transition: transform .3s cubic-bezier(.2, .8, .2, 1);
   }
-  body.typing #panel { top: env(safe-area-inset-top, 0px); }
+  /* --vv-top/--kb setzt app.js aus visualViewport: Blatt endet oberhalb der Tastatur */
+  body.typing #panel { top: calc(var(--vv-top, 0px) + env(safe-area-inset-top, 0px)); bottom: var(--kb, 0px); }
+  body.typing #sheetBody { padding-bottom: 16px; }
   #grip {
     display: block; flex: none; width: 100%; height: 26px; min-height: 26px; padding: 0;
     background: transparent; border: 0; border-radius: 0; touch-action: none; cursor: grab;
@@ -3038,6 +3040,27 @@ sheet.addEventListener('focusout', () => {
     }
   }, 300);
 });
+
+// iOS legt die Tastatur über die Seite, ohne sie kleiner zu machen. Darum das Blatt beim Tippen auf
+// den sichtbaren Bereich (visualViewport) begrenzen und das aktive Feld darin sichtbar scrollen.
+const vv = window.visualViewport;
+function revealActive() {
+  const el = document.activeElement;
+  if (!document.body.classList.contains('typing') || !el || !sheetBody.contains(el)) return;
+  const box = sheetBody.getBoundingClientRect(), r = el.getBoundingClientRect();
+  if (r.bottom > box.bottom - 12) sheetBody.scrollTop += r.bottom - box.bottom + 12;
+  else if (r.top < box.top + 12) sheetBody.scrollTop -= box.top + 12 - r.top;
+}
+function fitViewport() {
+  if (!vv) return;
+  const top = Math.max(0, vv.offsetTop);
+  const kb = Math.max(0, window.innerHeight - vv.height - top);
+  document.documentElement.style.setProperty('--vv-top', top + 'px');
+  document.documentElement.style.setProperty('--kb', kb + 'px');
+  requestAnimationFrame(revealActive);
+}
+if (vv) { vv.addEventListener('resize', fitViewport); vv.addEventListener('scroll', fitViewport); }
+sheet.addEventListener('focusin', () => setTimeout(fitViewport, 50));
 
 narrow.addEventListener('change', () => { setSheet('half', { sync: true }); map.invalidateSize(); });
 window.addEventListener('resize', () => { if (sheetState === 'peek') setSheet('peek', { sync: true }); });
