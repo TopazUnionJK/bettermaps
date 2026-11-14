@@ -20,6 +20,10 @@ Orte finden, bei denen auch die Umgebung passt – z. B. ein Restaurant in Rosen
 - Secrets der Edge Function:
   - `GOOGLE_PLACES_KEY`: Server-Schlüssel, nur „Places API (New)“ erlaubt
   - `GOOGLE_MAPS_BROWSER_KEY`: Browser-Schlüssel, nur „Maps JavaScript API“, Websites `https://topazunionjk.github.io/*`
+- Freischaltung neuer Konten: Nach der ersten Anmeldung geht eine Mail an `ADMIN_EMAIL` mit einem Link
+  (30 Tage gültig), der in der App „Freischalten“/„Ablehnen“ anbietet. Bis dahin kann das Konto nicht suchen.
+  Secrets: `ADMIN_EMAIL`, `APPROVE_SECRET` (zufällig), `SMTP_USER` (Gmail-Adresse), `SMTP_PASS` (Gmail-App-Passwort).
+  Von Hand: `update public.profiles set status = 'approved' where id = (select id from auth.users where email = '…');`
 - Auth → URL Configuration: Site URL `https://topazunionjk.github.io/bettermaps/`, zusätzlich `http://localhost:5173/` als Redirect-URL
 
 Nutzer auf Pro setzen (bis ein Zahlungsanbieter angebunden ist):

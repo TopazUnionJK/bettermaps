@@ -266,3 +266,10 @@ footer { color: #80868b; font-size: 12px; padding-top: 8px; }
   .leaflet-popup-content { font-size: 15px; }
   .popup .links a { padding: 6px 0; }
 }
+
+/* Freischalt-Dialog (Link aus der Betreiber-Mail) */
+#approveBox { position: fixed; inset: 0; z-index: 5000; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .6); }
+#approveBox .card { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+#approveBox h2 { margin: 0 0 8px; font-size: 18px; }
+#approveBox p { margin: 0 0 16px; word-break: break-word; }
+#approveBox .actions { display: flex; flex-wrap: wrap; gap: 8px; }

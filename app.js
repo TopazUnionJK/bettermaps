@@ -342,6 +342,14 @@ function renderAccount() {
   $('#acctIn').hidden = !inn;
   if (!inn) { $('#acctState').textContent = storedKey() ? 'eigener Schlüssel' : 'nicht angemeldet'; return; }
   const email = session.user?.email || '';
+  if (account && account.status && account.status !== 'approved') {
+    const pending = account.status === 'pending';
+    $('#acctState').textContent = pending ? 'wartet auf Freischaltung' : 'nicht freigeschaltet';
+    $('#acctInfo').textContent = `Angemeldet als ${email}. ` + (pending
+      ? 'Dein Konto wird gerade geprüft. Du bekommst eine E-Mail, sobald du suchen kannst.'
+      : 'Dein Konto wurde nicht freigeschaltet.');
+    return;
+  }
   $('#acctState').textContent = account ? `${account.plan === 'pro' ? 'Pro' : 'Kostenlos'} · ${account.used}/${account.limit} heute` : email;
   $('#acctInfo').textContent = `Angemeldet als ${email}.` + (account
     ? ` Tarif: ${account.plan === 'pro' ? 'Pro' : 'Kostenlos'}. Heute ${account.used} von ${account.limit} Google-Abfragen genutzt (eine Suche braucht meist 1 bis 3; Bedingungen wie Spielplatz oder Ladesäule kosten nichts, nur Freitext-Bedingungen zählen extra).`
@@ -448,6 +456,46 @@ $('#codeForm').addEventListener('submit', async e => {
   try { localStorage.removeItem(PENDING_KEY); } catch { /* egal */ }
   acctMessage('');
 });
+// Freischalt-Link aus der Betreiber-Mail: ?approve=<Konto>&sig=<Signatur>
+(async () => {
+  const q = new URLSearchParams(location.search);
+  const uid = q.get('approve'), sig = q.get('sig'), exp = q.get('exp');
+  if (!uid || !sig) return;
+  history.replaceState(null, '', location.pathname); // Link nicht in der Adresszeile/Chronik lassen
+  const call = async action => {
+    const res = await fetch(API_URL + '/approve', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SB_KEY },
+      body: JSON.stringify({ uid, sig, exp: Number(exp), action }),
+    });
+    return { ok: res.ok, json: await res.json().catch(() => ({})) };
+  };
+  const text = el('p');
+  const done = () => box.remove();
+  const btnOk = el('button', { type: 'button', textContent: 'Freischalten' });
+  const btnNo = el('button', { type: 'button', className: 'ghost', textContent: 'Ablehnen' });
+  const btnClose = el('button', { type: 'button', className: 'ghost', textContent: 'Schließen', onclick: done });
+  const box = el('div', { id: 'approveBox', role: 'dialog' },
+    el('div', { className: 'card' }, el('h2', { textContent: 'Registrierung freischalten' }), text,
+      el('div', { className: 'actions' }, btnOk, btnNo, btnClose)));
+  document.body.append(box);
+  text.textContent = 'Lade …';
+  const label = { pending: 'wartet auf Freischaltung', approved: 'ist freigeschaltet', rejected: 'ist abgelehnt' };
+  const show = r => {
+    if (!r.ok) { text.textContent = r.json.error || 'Fehler.'; btnOk.hidden = btnNo.hidden = true; return; }
+    text.textContent = `${r.json.email} ${label[r.json.status] || ''}.`;
+    btnOk.hidden = r.json.status === 'approved';
+    btnNo.hidden = r.json.status === 'rejected';
+  };
+  const act = action => async () => {
+    btnOk.disabled = btnNo.disabled = true;
+    try { show(await call(action)); } catch { text.textContent = 'Keine Verbindung zum Server.'; }
+    btnOk.disabled = btnNo.disabled = false;
+  };
+  btnOk.onclick = act('approve');
+  btnNo.onclick = act('reject');
+  try { show(await call('info')); } catch { text.textContent = 'Keine Verbindung zum Server.'; }
+})();
+
 $('#logout').onclick = async () => {
   const { error } = await sb.auth.signOut({ scope: 'local' });
   if (error) return acctMessage('Abmelden fehlgeschlagen: ' + error.message, true);
@@ -520,6 +568,10 @@ async function googleFetch(text, b, fields, pageToken) {
       ({ res, json } = await api('/search', { textQuery: text, rect: b, fields: fields === G_FIELDS_MAIN ? 'main' : 'near', pageToken }));
       if (json.quota && account) { account.used = json.quota.used; account.limit = json.quota.limit; renderAccount(); }
       if (res.status === 401) throw new Error('Deine Anmeldung ist abgelaufen – bitte unten unter „Konto“ neu anmelden.');
+      if (res.status === 403 && json.status) {
+        if (account) { account.status = json.status; renderAccount(); }
+        throw new Error(json.error);
+      }
       if (res.status === 429 && json.limit) {
         if (account) { account.used = json.used; account.limit = json.limit; renderAccount(); }
         throw new Error(`${json.error} Morgen geht es weiter${json.plan === 'pro' ? '' : ' – oder mit dem Pro-Tarif mehr pro Tag'}.`);
@@ -1115,6 +1167,13 @@ async function runSearch(useMapView) {
     if (dataSource() === 'none') {
       $('#account').open = true;
       throw new Error('Bitte melde dich zuerst an – unten unter „Konto“, mit deiner E-Mail-Adresse.');
+    }
+    if (dataSource() === 'cloud' && account?.status && account.status !== 'approved') await refreshAccount(); // evtl. inzwischen freigeschaltet
+    if (dataSource() === 'cloud' && account?.status && account.status !== 'approved') {
+      $('#account').open = true;
+      throw new Error(account.status === 'pending'
+        ? 'Dein Konto wartet noch auf Freischaltung. Du bekommst eine E-Mail, sobald du suchen kannst.'
+        : 'Dein Konto wurde nicht freigeschaltet.');
     }
     const mainCat = resolve($('#main').value);
     if (!mainCat) throw new Error('Bitte eingeben, was du suchst.');
