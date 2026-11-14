@@ -2,6 +2,7 @@
 //   GET  /api/me      → Tarif, heutige Nutzung, Limit, Schlüssel für die Kartenanzeige
 //   POST /api/search  → eine Seite Google „Text Search (New)“ (zählt 1 Abfrage)
 //   POST /api/near    → POIs aus der eigenen OSM-Datenbank im Umkreis der Treffer (kostenlos)
+//   POST /api/area    → POIs einer Kategorie im Rechteck (OpenStreetMap-Modus, kostenlos)
 import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -71,63 +72,90 @@ function num(v: unknown, min: number, max: number) {
 const TILE_LAT = 0.05, TILE_LON = 0.075;
 const M_PER_DEG = 111320;
 
-// Länder in der POI-Datenbank (grobe Rechtecke). Außerhalb antwortet /near mit covered:false,
-// dann sucht die App diese Bedingungen wie früher bei Google.
-const COVERAGE = [
-  { s: 47.2, n: 55.1, w: 5.8, e: 15.1 },   // Deutschland
-  { s: 46.3, n: 49.1, w: 9.5, e: 17.2 },   // Österreich
-  { s: 45.8, n: 47.9, w: 5.9, e: 10.5 },   // Schweiz
-  { s: 35.4, n: 47.1, w: 6.6, e: 18.6 },   // Italien
-];
-const covered = (lat: number, lon: number) => COVERAGE.some(b => lat >= b.s && lat <= b.n && lon >= b.w && lon <= b.e);
-const MAX_POOL = 3000;
-
+const MAX_POOL = 20000; // Einträge je Bedingung
+const MAX_AREA = 5000;  // Treffer der Hauptsuche (OpenStreetMap-Modus)
 class BadRequest extends Error {}
 
-// Alle POIs einer Kategorie, die höchstens `radius` m von einem der Punkte entfernt sind.
+type Row = { key: number; la: number[]; lo: number[]; nm: (string | null)[] };
+const tileKey = (lat: number, lon: number) => Math.floor((lat + 90) / TILE_LAT) * 5000 + Math.floor((lon + 180) / TILE_LON);
+
+function* decode(rows: Row[]): Generator<[number, number, string | null]> {
+  for (const t of rows) {
+    const i = Math.floor(t.key / 5000), j = t.key % 5000;
+    for (let k = 0; k < t.la.length; k++) {
+      yield [(i + (t.la[k] + 32768) / 65535) * TILE_LAT - 90, (j + (t.lo[k] + 32768) / 65535) * TILE_LON - 180, t.nm[k]];
+    }
+  }
+}
+const round6 = (v: number) => Math.round(v * 1e6) / 1e6;
+
+async function tiles(cat: string, keys: number[]) {
+  if (keys.length > 900) throw new BadRequest('Gebiet zu groß.'); // PostgREST liefert höchstens 1000 Zeilen
+  const { data, error } = await admin.rpc('poi_tiles', { p_label: cat, p_keys: keys });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Row[];
+}
+
+// Deckt die Datenbank diese Kacheln ab (Liste private.poi_cover aus dem Import) und kennt sie alle Kategorien?
+// Sonst sucht die App wie früher bei Google bzw. den öffentlichen OpenStreetMap-Servern.
+async function isCovered(keys: number[], labels: string[]) {
+  const k = [...new Set(keys)], l = [...new Set(labels)];
+  if (k.length > 2000) return false;
+  const { data, error } = await admin.rpc('poi_check', { p_keys: k, p_labels: l });
+  if (error) throw new Error(error.message);
+  const row = (Array.isArray(data) ? data[0] : data) as { keys_found: number; labels_found: number };
+  return row.keys_found === k.length && row.labels_found === l.length;
+}
+
+// Alle POIs einer Kategorie, die höchstens etwa `radius` m von einem der Punkte entfernt sind.
+// Etwas großzügig (bis ca. 35 % mehr), den genauen Schnitt macht die App (Haversine).
 async function nearPois(cat: string, radius: number, points: [number, number][]) {
-  const r = radius * 1.01; // etwas großzügiger, den genauen Schnitt macht die App (Haversine)
+  const r = radius * 1.01;
+  const maxLat = Math.max(...points.map(p => Math.abs(p[0]))) + r / M_PER_DEG;
+  const cosMin = Math.max(0.1, Math.cos(maxLat * Math.PI / 180));
+  const dLat = r / M_PER_DEG, dLon = dLat / cosMin;
+
+  // Raster mit Zellen von r/4: alle Zellen markieren, deren Mitte höchstens r + halbe Zelldiagonale
+  // von einem Punkt entfernt ist. Danach ist die Prüfung je POI ein einziger Nachschlag.
+  const cLat = dLat / 4, cLon = dLon / 4, reach = 1 + Math.SQRT2 / 8;
+  const marked = new Set<number>();
+  const cellKey = (a: number, b: number) => a * 1e8 + b;
   const keys = new Set<number>();
   for (const [lat, lon] of points) {
-    const dLat = r / M_PER_DEG, dLon = r / (M_PER_DEG * Math.cos((Math.abs(lat) + dLat) * Math.PI / 180));
+    const a0 = Math.floor((lat - dLat) / cLat), a1 = Math.floor((lat + dLat) / cLat);
+    const b0 = Math.floor((lon - dLon) / cLon), b1 = Math.floor((lon + dLon) / cLon);
+    for (let a = a0; a <= a1; a++) {
+      for (let b = b0; b <= b1; b++) {
+        const y = ((a + 0.5) * cLat - lat) / dLat, x = ((b + 0.5) * cLon - lon) / dLon;
+        if (x * x + y * y <= reach * reach) marked.add(cellKey(a, b));
+      }
+    }
     const i0 = Math.floor((lat - dLat + 90) / TILE_LAT), i1 = Math.floor((lat + dLat + 90) / TILE_LAT);
     const j0 = Math.floor((lon - dLon + 180) / TILE_LON), j1 = Math.floor((lon + dLon + 180) / TILE_LON);
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) keys.add(i * 5000 + j);
   }
-  if (keys.size > 900) throw new BadRequest('Gebiet zu groß.'); // PostgREST liefert höchstens 1000 Zeilen
-  const { data, error } = await admin.rpc('poi_tiles', { p_label: cat, p_keys: [...keys] });
-  if (error) throw new Error(error.message);
+  const out: [number, number, string | null][] = [];
+  for (const [lat, lon, name] of decode(await tiles(cat, [...keys]))) {
+    if (!marked.has(cellKey(Math.floor(lat / cLat), Math.floor(lon / cLon)))) continue;
+    if (out.length >= MAX_POOL) return { points: out, capped: true };
+    out.push([round6(lat), round6(lon), name]);
+  }
+  return { points: out, capped: false };
+}
 
-  // Treffer in ein Raster mit Zellgröße = Radius einsortieren, damit nicht jeder POI gegen jeden Punkt läuft.
-  const cell = r / M_PER_DEG;
-  const grid = new Map<string, [number, number][]>();
-  for (const p of points) {
-    const k = `${Math.floor(p[0] / cell)},${Math.floor(p[1] / cell)}`;
-    (grid.get(k) ?? grid.set(k, []).get(k)!).push(p);
+// Alle POIs einer Kategorie in einem Rechteck (OpenStreetMap-Modus der App: Hauptsuche aus der Datenbank).
+async function areaPois(cat: string, r: { s: number; n: number; w: number; e: number }) {
+  const keys: number[] = [];
+  for (let i = Math.floor((r.s + 90) / TILE_LAT); i <= Math.floor((r.n + 90) / TILE_LAT); i++) {
+    for (let j = Math.floor((r.w + 180) / TILE_LON); j <= Math.floor((r.e + 180) / TILE_LON); j++) keys.push(i * 5000 + j);
   }
   const out: [number, number, string | null][] = [];
-  for (const t of (data ?? []) as { key: number; la: number[]; lo: number[]; nm: (string | null)[] }[]) {
-    const i = Math.floor(t.key / 5000), j = t.key % 5000;
-    for (let k = 0; k < t.la.length; k++) {
-      const lat = (i + (t.la[k] + 32768) / 65535) * TILE_LAT - 90;
-      const lon = (j + (t.lo[k] + 32768) / 65535) * TILE_LON - 180;
-      const cos = Math.cos(lat * Math.PI / 180);
-      const gi = Math.floor(lat / cell), gj = Math.floor(lon / cell);
-      const lonCells = Math.floor(1 / Math.max(0.1, cos)) + 1; // Längengrade sind kürzer: mehr Nachbarzellen
-      let near = false;
-      for (let a = gi - 1; a <= gi + 1 && !near; a++) {
-        for (let b = gj - lonCells; b <= gj + lonCells && !near; b++) {
-          near = (grid.get(`${a},${b}`) ?? []).some(([plat, plon]) => {
-            const dy = (lat - plat) * M_PER_DEG, dx = (lon - plon) * M_PER_DEG * cos;
-            return dx * dx + dy * dy <= r * r;
-          });
-        }
-      }
-      if (near) out.push([Math.round(lat * 1e6) / 1e6, Math.round(lon * 1e6) / 1e6, t.nm[k]]);
-      if (out.length >= MAX_POOL) return out;
-    }
+  for (const [lat, lon, name] of decode(await tiles(cat, keys))) {
+    if (lat < r.s || lat > r.n || lon < r.w || lon > r.e) continue;
+    if (out.length >= MAX_AREA) return { points: out, capped: true };
+    out.push([round6(lat), round6(lon), name]);
   }
-  return out;
+  return { points: out, capped: false };
 }
 
 Deno.serve(async (req) => {
@@ -199,7 +227,7 @@ Deno.serve(async (req) => {
       const b = await req.json().catch(() => null);
       const points = Array.isArray(b?.points) ? b.points : null;
       const conds = Array.isArray(b?.conds) ? b.conds : null;
-      if (!points || !conds || points.length < 1 || points.length > 60 || conds.length < 1 || conds.length > 6
+      if (!points || !conds || points.length < 1 || points.length > MAX_AREA || conds.length < 1 || conds.length > 6
         || !points.every((p: unknown) => Array.isArray(p) && num(p[0], -90, 90) && num(p[1], -180, 180))
         || !conds.every((c: { cat?: unknown; radius?: unknown }) => typeof c?.cat === 'string' && c.cat.length <= 40 && num(c.radius, 1, 5000))
         || new Set(conds.map((c: { cat: string }) => c.cat)).size !== conds.length) {
@@ -208,10 +236,28 @@ Deno.serve(async (req) => {
       const lats = points.map((p: number[]) => p[0]), lons = points.map((p: number[]) => p[1]);
       const box = { s: Math.min(...lats), n: Math.max(...lats), w: Math.min(...lons), e: Math.max(...lons) };
       if (!smallEnough(box)) return json(req, { error: 'Gebiet zu groß.' }, 400);
-      if (!points.every(([lat, lon]: number[]) => covered(lat, lon))) return json(req, { covered: false });
+      const cats = conds.map((c: { cat: string }) => c.cat);
+      if (!await isCovered(points.map(([lat, lon]: number[]) => tileKey(lat, lon)), cats)) return json(req, { covered: false });
       try {
-        const pools = await Promise.all(conds.map((c: { cat: string; radius: number }) => nearPois(c.cat, c.radius, points)));
-        return json(req, { covered: true, pools });
+        const res = await Promise.all(conds.map((c: { cat: string; radius: number }) => nearPois(c.cat, c.radius, points)));
+        return json(req, { covered: true, pools: res.map(x => x.points), capped: res.map(x => x.capped) });
+      } catch (e) {
+        if (e instanceof BadRequest) return json(req, { error: e.message }, 400);
+        throw e;
+      }
+    }
+
+    if (req.method === 'POST' && path === '/area') {
+      const b = await req.json().catch(() => null);
+      const r = b?.rect;
+      if (typeof b?.cat !== 'string' || b.cat.length > 40 || !r || !num(r.s, -90, 90) || !num(r.n, -90, 90)
+        || !num(r.w, -180, 180) || !num(r.e, -180, 180) || r.n <= r.s || r.e <= r.w || !smallEnough(r)) {
+        return json(req, { error: 'Ungültige Anfrage.' }, 400);
+      }
+      const probe = [[r.s, r.w], [r.s, r.e], [r.n, r.w], [r.n, r.e], [(r.s + r.n) / 2, (r.w + r.e) / 2]].map(([a, b]) => tileKey(a, b));
+      if (!await isCovered(probe, [b.cat])) return json(req, { covered: false });
+      try {
+        return json(req, { covered: true, ...await areaPois(b.cat, r) });
       } catch (e) {
         if (e instanceof BadRequest) return json(req, { error: e.message }, 400);
         throw e;

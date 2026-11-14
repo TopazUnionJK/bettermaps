@@ -587,15 +587,28 @@ let activeSource = 'none'; // für die laufende Suche festgelegt (siehe runSearc
 // Bedingungen mit bekannter Kategorie kommen aus der eigenen OSM-Datenbank im Backend
 // (schnell, kostet keine Google-Abfrage); Freitext-Bedingungen gehen an Google.
 // Liefert null, wenn die Datenbank das Gebiet nicht abdeckt oder nicht erreichbar ist.
+const cappedNote = labels => (labels.length
+  ? `Sehr viele Orte bei ${labels.map(l => `„${l}“`).join(', ')} – evtl. fehlen Treffer. Bitte kleineren Bereich wählen.` : '');
+
+// Punkt aus der POI-Datenbank; die ID aus den Koordinaten erkennt dasselbe Objekt in Hauptsuche und Bedingung.
+const dbPoint = ([lat, lon, name]) => ({ id: `db/${lat},${lon}`, lat, lon, tags: { name } });
+
+// Liefert je Bedingung eine Punktliste (Eigenschaft .capped: abgeschnittene Kategorien)
+// oder null, wenn die Datenbank das Gebiet nicht abdeckt oder nicht erreichbar ist.
 async function dbPools(mains, dbConds) {
-  if (!dbConds.length || !mains.length) return dbConds.map(() => []);
+  if (!dbConds.length || !mains.length) return Object.assign(dbConds.map(() => []), { capped: [] });
+  // Gleiche Kategorie mehrfach (z. B. Spielplatz 200 m und 1 km): einmal mit dem größten Radius abfragen
+  const radius = new Map();
+  for (const c of dbConds) radius.set(c.cat, Math.max(radius.get(c.cat) || 0, c.radius));
+  const cats = [...radius.keys()];
   try {
     const { res, json } = await api('/near', {
       points: mains.map(p => [p.lat, p.lon]),
-      conds: dbConds.map(c => ({ cat: c.cat, radius: c.radius })),
+      conds: cats.map(cat => ({ cat, radius: radius.get(cat) })),
     });
     if (!res.ok || !json.covered) return null;
-    return json.pools.map((pool, i) => pool.map(([lat, lon, name], k) => ({ id: `db/${i}/${k}`, lat, lon, tags: { name } })));
+    const byCat = new Map(cats.map((cat, i) => [cat, json.pools[i].map(dbPoint)]));
+    return Object.assign(dbConds.map(c => byCat.get(c.cat)), { capped: cats.filter((cat, i) => json.capped?.[i]) });
   } catch {
     return null;
   }
@@ -632,16 +645,17 @@ async function googleData(mainCat, conds, bbox) {
     db = extra.map(g => g.points);
   }
   const gPools = gs.map(g => g.points);
+  const dbCapped = db.capped || [];
   const pools = conds.map((c, i) => (viaDb[i] ? db : gPools).shift());
   const capped = [[m, mainCat], ...gs.map((g, i) => [g, gConds[i]]), ...extra.map((g, i) => [g, dbConds[i]])]
     .filter(([r]) => r.capped).map(([, c]) => c.label);
-  const note = capped.length
+  const note = [capped.length
     ? `Google liefert pro Suchbegriff höchstens ${G_MAX} Orte – bei ${capped.map(l => `„${l}“`).join(', ')} fehlen evtl. welche. Vollständiger, aber langsamer: OpenStreetMap.`
-    : '';
+    : '', cappedNote(dbCapped)].filter(Boolean).join(' ');
   return { mains: m.points, pools, note };
 }
 
-async function osmData(mainCat, conds, bbox) {
+async function overpassPoints(mainCat, conds, bbox) {
   const query = buildQuery(mainCat, bbox, conds);
   const ck = 'o' + hashKey(query);
   let elements = cacheGet(ck);
@@ -656,11 +670,48 @@ async function osmData(mainCat, conds, bbox) {
     if (lat == null || lon == null || !e.tags) continue;
     points.push({ id: `${e.type}/${e.id}`, lat, lon, tags: e.tags });
   }
-  const isPublic = p => p.tags.access !== 'private' && p.tags.access !== 'no';
+  return points;
+}
+
+const isPublic = p => p.tags.access !== 'private' && p.tags.access !== 'no';
+
+async function osmOnly(mainCat, conds, bbox) {
+  const points = await overpassPoints(mainCat, conds, bbox);
   return {
     mains: points.filter(p => matches(p.tags, mainCat)),
     pools: conds.map(c => points.filter(p => matches(p.tags, c) && isPublic(p))),
   };
+}
+
+// OpenStreetMap-Modus: bekannte Kategorien aus der eigenen POI-Datenbank im Backend (schnell),
+// Freitext wie „Sushi“ oder „dm“ von den öffentlichen OpenStreetMap-Servern.
+// Ohne Anmeldung oder außerhalb von DE/AT/CH/IT alles von den öffentlichen Servern.
+async function osmData(mainCat, conds, bbox) {
+  if (!session || (!mainCat.cat && !conds.some(c => c.cat))) return osmOnly(mainCat, conds, bbox);
+  // Erst das Backend (schnell): deckt es das Gebiet nicht ab, gleich alles von den öffentlichen Servern.
+  let area = null;
+  if (mainCat.cat) {
+    setLoading('Suche …');
+    try {
+      const { res, json } = await api('/area', { cat: mainCat.cat, rect: bbox });
+      if (res.ok && json.covered) area = json;
+    } catch { /* Backend nicht erreichbar */ }
+    if (!area) return osmOnly(mainCat, conds, bbox);
+  }
+  // Freitext (Hauptsuche oder Bedingungen) von den öffentlichen Servern; Fehler dort normal melden.
+  const textConds = conds.filter(c => !c.cat);
+  const points = !mainCat.cat || textConds.length ? await overpassPoints(mainCat.cat ? null : mainCat, textConds, bbox) : [];
+  const mains = area ? area.points.map(dbPoint) : points.filter(p => matches(p.tags, mainCat));
+  const db = await dbPools(mains, conds.filter(c => c.cat));
+  if (!db) {
+    // Bedingungen doch von den öffentlichen Servern; Hauptsuche bleibt, wo sie herkam.
+    const rest = await overpassPoints(null, conds.filter(c => c.cat), bbox);
+    return { mains, pools: conds.map(c => (c.cat ? rest : points).filter(p => matches(p.tags, c) && isPublic(p))), note: '' };
+  }
+  const pools = conds.map(c => (c.cat ? db.shift() : points.filter(p => matches(p.tags, c) && isPublic(p))));
+  const note = [area?.capped ? `Sehr viele Treffer – angezeigt werden die ersten ${area.points.length}. Bitte kleineren Bereich wählen.` : '',
+    cappedNote(db.capped)].filter(Boolean).join(' ');
+  return { mains, pools, note };
 }
 if (storedKey()) { $('#gmKey').value = storedKey(); loadGoogle(storedKey()); }
 const poiLayer = L.layerGroup().addTo(map);
@@ -832,7 +883,7 @@ function buildQuery(mainCat, bbox, conds) {
   const lines = (cat, where) => cat.filters
     .map(f => '  nwr' + Object.entries(f).map(([k, v]) => (typeof v === 'string' ? `["${k}"="${v}"]` : v.any ? `["${k}"]` : `["${k}"~"${v.re}",i]`)).join('') + where + ';')
     .join('\n');
-  const parts = [lines(mainCat, box(bbox))];
+  const parts = mainCat ? [lines(mainCat, box(bbox))] : [];
   for (const c of conds) parts.push(lines(c, box(expandBbox(bbox, c.radius))));
   return `[out:json][timeout:60];\n(\n${parts.join('\n')}\n);\nout center tags;`;
 }
@@ -1048,6 +1099,14 @@ locate().then(me => {
 // „Um mich herum“ und ähnliche Eingaben im Wo?-Feld bedeuten: eigener Standort
 const isNearMe = text => /^(um mich( herum)?|in meiner n(ä|ae)he|meine? (n(ä|ae)he|standort)|aktueller standort|hier)$/i.test(text.trim());
 
+// Dasselbe OSM-Objekt aus zwei Quellen (Datenbank „db/…“ und öffentliche Server „node/…“) hat
+// verschiedene IDs: dann gleicher Name und fast gleiche Lage.
+function sameObject(a, b) {
+  if (a.id.startsWith('db/') === b.id.startsWith('db/') || a.id.startsWith('g/') || b.id.startsWith('g/')) return false;
+  const nm = t => t.name || t.brand || ''; // die Datenbank speichert Name oder Marke
+  return nm(a.tags) === nm(b.tags) && haversine(a, b) < (nm(a.tags) ? 40 : 5);
+}
+
 async function runSearch(useMapView) {
   const nearMe = !useMapView && (isNearMe($('#place').value) || !$('#place').value.trim()); // leer = um mich herum
   setBusy(true);
@@ -1110,7 +1169,10 @@ async function runSearch(useMapView) {
         source = 'osm';
       }
     }
-    if (!data) data = await osmData(mainCat, conds, bbox);
+    if (!data) {
+      data = await osmData(mainCat, conds, bbox);
+      if (data.note) note = [note, data.note].filter(Boolean).join(' ');
+    }
 
     const mains = data.mains.filter(p => inBbox(p, bbox) && (!polygons || inPolygons(p, polygons)) &&
       (!me || haversine(me, p) <= NEAR_ME_M)); // um mich herum: echter Kreis statt Rechteck
@@ -1123,7 +1185,7 @@ async function runSearch(useMapView) {
       for (let i = 0; i < conds.length && ok; i++) {
         const hits = [];
         for (const p of pools[i]) {
-          if (p.id === m.id) continue;
+          if (p.id === m.id || sameObject(p, m)) continue;
           const d = haversine(m, p);
           if (d <= conds[i].radius) hits.push({ p, d });
         }
@@ -1185,7 +1247,7 @@ function popupContent(r) {
   const gq = t.name ? `${t.name}, ${address(t) || `${r.lat},${r.lon}`}` : `${r.lat},${r.lon}`;
   const gmaps = t.gmaps || 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(gq);
   links.append(el('a', { href: gmaps, target: '_blank', rel: 'noopener', textContent: 'Google Maps' }));
-  if (!r.id.startsWith('g/')) links.append(el('a', { href: 'https://www.openstreetmap.org/' + r.id, target: '_blank', rel: 'noopener', textContent: 'OpenStreetMap' }));
+  if (!r.id.startsWith('g/')) links.append(el('a', { href: r.id.startsWith('db/') ? `https://www.openstreetmap.org/#map=19/${r.lat}/${r.lon}` : 'https://www.openstreetmap.org/' + r.id, target: '_blank', rel: 'noopener', textContent: 'OpenStreetMap' }));
   const site = t.website || t['contact:website'];
   if (site && /^https?:\/\//i.test(site)) links.append(el('a', { href: site, target: '_blank', rel: 'noopener', textContent: 'Website' }));
   box.append(links);

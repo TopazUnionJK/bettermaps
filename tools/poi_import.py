@@ -223,6 +223,8 @@ def main():
       drop table private.poi_tile;
       alter table private.poi_tile_new rename to poi_tile;
       alter index private.poi_tile_new_pkey rename to poi_tile_pkey;
+      delete from private.poi_cover;
+      insert into private.poi_cover (key) select distinct key from private.poi_tile;
       insert into private.poi_meta (key, value) values ('imported_at', now()::text), ('countries', {q(','.join(countries))})
         on conflict (key) do update set value = excluded.value;
       commit;
