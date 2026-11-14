@@ -3216,6 +3216,10 @@ function popupContent(r) {
   const gq = t.name ? `${t.name}, ${address(t) || `${r.lat},${r.lon}`}` : `${r.lat},${r.lon}`;
   const gmaps = t.gmaps || 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(gq);
   links.append(el('a', { href: gmaps, target: '_blank', rel: 'noopener', textContent: 'Google Maps' }));
+  // Route in Google Maps; ohne Startpunkt nimmt Google den aktuellen Standort.
+  const route = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(`${r.lat},${r.lon}`)
+    + (r.id.startsWith('g/') ? '&destination_place_id=' + encodeURIComponent(r.id.slice(2)) : '');
+  links.append(el('a', { href: route, target: '_blank', rel: 'noopener', textContent: 'Route' }));
   if (!r.id.startsWith('g/')) links.append(el('a', { href: r.id.startsWith('db/') ? `https://www.openstreetmap.org/#map=19/${r.lat}/${r.lon}` : 'https://www.openstreetmap.org/' + r.id, target: '_blank', rel: 'noopener', textContent: 'OpenStreetMap' }));
   const site = t.website || t['contact:website'];
   if (site && /^https?:\/\//i.test(site)) links.append(el('a', { href: site, target: '_blank', rel: 'noopener', textContent: 'Website' }));
