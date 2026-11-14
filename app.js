@@ -609,7 +609,7 @@ async function googleFetch(text, b, fields, pageToken) {
       }
       if (res.status === 429 && json.limit) {
         if (account) { account.used = json.used; account.limit = json.limit; renderAccount(); }
-        throw new Error(`${json.error} Morgen geht es weiter${json.plan === 'pro' ? '' : ' – oder mit dem Pro-Tarif mehr pro Tag'}.`);
+        throw quotaError(`Dein Tageskontingent ist aufgebraucht (${json.used} von ${json.limit} Google-Abfragen). Morgen geht es weiter${json.plan === 'pro' ? '' : ' – oder mit dem Pro-Tarif mehr pro Tag'}.`);
       }
       if (!res.ok && json.error && typeof json.error === 'string') throw new Error(json.error);
     } else {
@@ -669,6 +669,9 @@ async function googleTerm(text, b, fields, split) {
   return { points: [...byId.values()], capped: parts.some(p => p.length >= G_MAX) };
 }
 
+// Google-Kontingent im Konto erschöpft: dann wird OpenStreetMap als Ausweg angeboten.
+const quotaError = msg => Object.assign(new Error(msg), { quota: true });
+
 let activeSource = 'none'; // für die laufende Suche festgelegt (siehe runSearch)
 
 // Bedingungen mit bekannter Kategorie kommen aus der eigenen OSM-Datenbank im Backend
@@ -713,8 +716,11 @@ async function googleData(mainCat, conds, bbox) {
   const checkQuota = n => {
     if (activeSource !== 'cloud' || !account) return true;
     const left = account.limit - account.used;
+    if (left < 1) {
+      throw quotaError(`Dein Tageskontingent ist aufgebraucht (${account.used} von ${account.limit} Google-Abfragen). Morgen geht es weiter.`);
+    }
     if (left < 1 + n) {
-      throw new Error(`Dein Tageskontingent ist fast aufgebraucht (${account.used} von ${account.limit} Google-Abfragen). Morgen geht es weiter.`);
+      throw quotaError(`Dein Tageskontingent reicht für diese Suche nicht mehr: noch ${left} von ${account.limit} Google-Abfragen frei, gebraucht werden mindestens ${1 + n}. Mit weniger Freitext-Bedingungen klappt es evtl. noch.`);
     }
     return left >= 3 * (1 + n) + 12 * n;
   };
@@ -1229,7 +1235,7 @@ function sameObject(a, b) {
   return nm(a.tags) === nm(b.tags) && haversine(a, b) < (nm(a.tags) ? 40 : 5);
 }
 
-async function runSearch(useMapView) {
+async function runSearch(useMapView, { osm = false } = {}) {
   const nearMe = !useMapView && (isNearMe($('#place').value) || !$('#place').value.trim()); // leer = um mich herum
   setBusy(true);
   showSkeleton();
@@ -1282,6 +1288,10 @@ async function runSearch(useMapView) {
     }
 
     let data = null, note = '', source = dataSource();
+    if (osm && source === 'cloud') {
+      source = 'osm';
+      note = 'Google-Kontingent aufgebraucht – mit OpenStreetMap gesucht.';
+    }
     activeSource = source;
     if (source === 'cloud') {
       setLoading('Suche bei Google …');
@@ -1338,7 +1348,10 @@ async function runSearch(useMapView) {
     resultLayer.clearLayers(); poiLayer.clearLayers(); highlightLayer.clearLayers();
     $('#results').replaceChildren();
     expandForm();
-    setStatus(err.message || String(err), true);
+    setStatus(err.quota
+      ? [err.message, ' ', el('button', { type: 'button', className: 'ghost osm-retry', textContent: 'Mit OpenStreetMap weitersuchen',
+          onclick: () => runSearch(useMapView, { osm: true }) })]
+      : err.message || String(err), true);
   } finally {
     setBusy(false);
   }
