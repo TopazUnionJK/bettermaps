@@ -671,6 +671,19 @@ async function googleTerm(text, b, fields, split) {
 
 // Google-Kontingent im Konto erschöpft: dann wird OpenStreetMap als Ausweg angeboten.
 const quotaError = msg => Object.assign(new Error(msg), { quota: true });
+// Wer einmal auf OpenStreetMap ausgewichen ist, bleibt dabei, bis das Kontingent wieder frei ist
+// (das Backend zählt pro Tag nach deutscher Zeit, also bis Mitternacht in Berlin).
+const OSM_DAY = 'bettermaps.osmDay';
+const berlinDay = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Berlin' });
+function osmFallback() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(OSM_DAY)); } catch { /* egal */ }
+  if (saved?.day !== berlinDay()) return false;
+  return !account || account.limit <= saved.limit; // höheres Limit (z. B. Pro): wieder Google
+}
+function rememberOsmFallback() {
+  try { localStorage.setItem(OSM_DAY, JSON.stringify({ day: berlinDay(), limit: account?.limit ?? 0 })); } catch { /* egal */ }
+}
 
 let activeSource = 'none'; // für die laufende Suche festgelegt (siehe runSearch)
 
@@ -1288,9 +1301,10 @@ async function runSearch(useMapView, { osm = false } = {}) {
     }
 
     let data = null, note = '', source = dataSource();
-    if (osm && source === 'cloud') {
+    if (source === 'cloud' && (osm || osmFallback())) {
+      if (osm) rememberOsmFallback();
       source = 'osm';
-      note = 'Google-Kontingent aufgebraucht – mit OpenStreetMap gesucht.';
+      note = 'Google-Kontingent für heute aufgebraucht – mit OpenStreetMap gesucht. Ab Mitternacht wieder mit Google.';
     }
     activeSource = source;
     if (source === 'cloud') {
