@@ -417,12 +417,16 @@ let loginEmail = '';
 // iOS lädt die Homescreen-App beim Wechsel zur Mail-App manchmal neu: offene Code-Eingabe wiederherstellen.
 try {
   const pending = JSON.parse(localStorage.getItem(PENDING_KEY) || 'null');
-  if (OTP_IN_EMAIL && pending && Date.now() - pending.t < 60 * 60 * 1000 && !session) {
+  // Wartet das Konto auf Freischaltung, kann der Code auch erst Tage später kommen.
+  const maxAge = pending?.waiting ? 14 * 86400_000 : 60 * 60 * 1000;
+  if (OTP_IN_EMAIL && pending && Date.now() - pending.t < maxAge && !session) {
     loginEmail = pending.email;
     $('#email').value = loginEmail;
     $('#codeForm').hidden = false;
     $('#account').open = true;
-    acctMessage(`Gib den Code aus der E-Mail an ${loginEmail} ein.`);
+    acctMessage(pending.waiting
+      ? `Dein Konto wird noch geprüft. Sobald es freigeschaltet ist, bekommst du den Anmeldecode per E-Mail an ${loginEmail} – gib ihn dann hier ein.`
+      : `Gib den Code aus der E-Mail an ${loginEmail} ein.`);
   }
 } catch { /* egal */ }
 $('#loginForm').addEventListener('submit', async e => {
@@ -430,10 +434,34 @@ $('#loginForm').addEventListener('submit', async e => {
   if (!sb) return;
   loginEmail = $('#email').value.trim();
   $('#sendLink').disabled = true;
+  acctMessage('Einen Moment …');
+  // Erst beim Backend nachfragen: Neue Konten warten auf Freischaltung, den Code gibt es erst danach.
+  let check;
+  try {
+    const res = await fetch(API_URL + '/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SB_KEY },
+      body: JSON.stringify({ email: loginEmail }),
+    });
+    check = { ok: res.ok, json: await res.json().catch(() => ({})) };
+  } catch {
+    $('#sendLink').disabled = false;
+    return acctMessage('Keine Verbindung zum Server. Bitte später noch einmal versuchen.', true);
+  }
+  if (!check.ok || check.json.status === 'rejected') {
+    $('#sendLink').disabled = false;
+    return acctMessage(check.json.status === 'rejected' ? 'Dieses Konto wurde nicht freigeschaltet.'
+      : check.json.error || 'Anmeldung gerade nicht möglich.', true);
+  }
+  if (check.json.status === 'pending') {
+    $('#sendLink').disabled = false;
+    $('#codeForm').hidden = false;
+    try { localStorage.setItem(PENDING_KEY, JSON.stringify({ email: loginEmail, t: Date.now(), waiting: true })); } catch { /* egal */ }
+    return acctMessage(`Danke! Deine Anmeldung wird geprüft. Sobald dein Konto freigeschaltet ist, bekommst du den Anmeldecode per E-Mail an ${loginEmail} – gib ihn dann hier ein.`);
+  }
   acctMessage('Sende E-Mail …');
   const { error } = await sb.auth.signInWithOtp({
     email: loginEmail,
-    options: { emailRedirectTo: location.origin + location.pathname },
+    options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: false },
   });
   $('#sendLink').disabled = false;
   if (error) return acctMessage(/rate|seconds/i.test(error.message)

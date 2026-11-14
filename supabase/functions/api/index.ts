@@ -1,5 +1,6 @@
 // BetterMaps-Backend: hält den Google-Schlüssel geheim, prüft Login und Tageslimit.
 //   GET  /api/me      → Tarif, heutige Nutzung, Limit, Freischaltung, Schlüssel für die Kartenanzeige
+//   POST /api/login   → Anmeldung anfragen (ohne Login): neues Konto wartet auf Freischaltung, erst dann gibt es einen Code
 //   POST /api/approve → Freischalten/Ablehnen über den signierten Link aus der Betreiber-Mail (ohne Login)
 //   POST /api/search  → eine Seite Google „Text Search (New)“ (zählt 1 Abfrage)
 //   POST /api/near    → POIs aus der eigenen OSM-Datenbank im Umkreis der Treffer (kostenlos)
@@ -89,62 +90,146 @@ async function profileStatus(uid: string) {
   return (data?.status ?? 'pending') as 'pending' | 'approved' | 'rejected';
 }
 
-// Einmal pro neuem Konto: E-Mail an den Betreiber. notified_at wird vorher gesetzt (kein Doppelversand
-// bei parallelen Aufrufen) und bei einem Fehler wieder geleert. Bricht der Versand ganz ab (z. B. Zeitlimit),
-// darf es nach einer Stunde ein neuer Aufruf erneut versuchen.
-async function requestApproval(uid: string, email: string) {
-  if (!ADMIN_EMAIL || !SMTP_USER || !SMTP_PASS || !APPROVE_SECRET) {
-    console.error('Freischaltung: ADMIN_EMAIL, SMTP_USER, SMTP_PASS oder APPROVE_SECRET fehlt – keine Mail an den Betreiber');
-    return;
-  }
-  const retryBefore = new Date(Date.now() - 3600_000).toISOString();
-  const { data, error } = await admin.from('profiles').update({ notified_at: new Date().toISOString() })
-    .eq('id', uid).eq('status', 'pending').or(`notified_at.is.null,notified_at.lt.${retryBefore}`).select('id');
-  if (error) { console.error('Freischaltung', error.message); return; }
-  if (!data?.length) return;
-  try {
-    const exp = Math.floor(Date.now() / 1000) + LINK_DAYS * 86400;
-    const link = `${APP_URL}?approve=${encodeURIComponent(uid)}&exp=${exp}&sig=${await sign(uid, exp)}`;
-    await sendMail(ADMIN_EMAIL, `BetterMaps: Neue Registrierung ${email}`,
-      `${email} hat sich bei BetterMaps registriert und wartet auf Freischaltung.\n\n` +
-      `Freischalten oder ablehnen (Link gilt ${LINK_DAYS} Tage):\n${link}\n`);
-  } catch (e) {
-    console.error('Freischalt-Mail fehlgeschlagen', e);
-    await admin.from('profiles').update({ notified_at: null }).eq('id', uid);
-  }
+// ---------- Anmeldeanfragen ----------
+// Neue Adressen bekommen zuerst nur eine Anfrage (private.login_request) und der Betreiber eine Mail.
+// Das Supabase-Konto – und damit ein Anmeldecode – entsteht erst bei der Freischaltung.
+type Decision = 'pending' | 'approved' | 'rejected';
+
+function clientIp(req: Request) {
+  return (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || null;
 }
 
-// Mail im Hintergrund verschicken, damit die Antwort nicht auf Gmail wartet.
-function requestApprovalLater(uid: string, email: string) {
-  const job = requestApproval(uid, email).catch(e => console.error(e));
-  // deno-lint-ignore no-explicit-any
-  (globalThis as any).EdgeRuntime?.waitUntil?.(job);
+async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
+  const { data, error } = await admin.rpc(fn, args);
+  if (error) throw new Error(`${fn}: ${error.message}`);
+  return data as T;
+}
+
+const userIdByEmail = (email: string) => rpc<string | null>('user_id_by_email', { p_email: email });
+
+// Anfrage holen/anlegen; bei Bedarf (einmal pro Anfrage) Mail an den Betreiber im Hintergrund.
+async function openRequest(email: string, ip: string | null) {
+  const rows = await rpc<{ id: string | null; status: string; notify: boolean }[]>('login_request_open', { p_email: email, p_ip: ip });
+  const r = rows[0];
+  if (r?.notify && r.id) {
+    const job = notifyAdmin(r.id, email).catch(e => console.error(e));
+    // deno-lint-ignore no-explicit-any
+    (globalThis as any).EdgeRuntime?.waitUntil?.(job); // Antwort wartet nicht auf Gmail
+  }
+  return r as { id: string | null; status: Decision | 'limited'; notify: boolean };
+}
+
+async function notifyAdmin(id: string, email: string) {
+  if (!ADMIN_EMAIL || !SMTP_USER || !SMTP_PASS || !APPROVE_SECRET) {
+    console.error('Freischaltung: ADMIN_EMAIL, SMTP_USER, SMTP_PASS oder APPROVE_SECRET fehlt – keine Mail an den Betreiber');
+    await rpc('login_request_notified', { p_id: id, p_ok: false });
+    return;
+  }
+  let ok = false;
+  try {
+    const exp = Math.floor(Date.now() / 1000) + LINK_DAYS * 86400;
+    const link = `${APP_URL}?approve=${encodeURIComponent(id)}&exp=${exp}&sig=${await sign(id, exp)}`;
+    await sendMail(ADMIN_EMAIL, `BetterMaps: Neue Registrierung ${email}`,
+      `${email} möchte sich bei BetterMaps anmelden und wartet auf Freischaltung.\n\n` +
+      `Freischalten oder ablehnen (Link gilt ${LINK_DAYS} Tage):\n${link}\n`);
+    ok = true;
+  } catch (e) {
+    console.error('Freischalt-Mail fehlgeschlagen', e);
+  }
+  await rpc('login_request_notified', { p_id: id, p_ok: ok });
+}
+
+// Konto anlegen bzw. finden und als freigeschaltet markieren.
+async function ensureApprovedUser(email: string) {
+  let uid = await userIdByEmail(email);
+  if (!uid) {
+    const { data, error } = await admin.auth.admin.createUser({ email, email_confirm: true });
+    uid = data?.user?.id ?? await userIdByEmail(email); // gleichzeitig angelegt?
+    if (!uid) throw new Error(error?.message ?? 'Konto konnte nicht angelegt werden');
+  }
+  const { error } = await admin.from('profiles').upsert({ id: uid, status: 'approved', decided_at: new Date().toISOString() });
+  if (error) throw new Error(error.message);
+  return uid;
+}
+
+// Nach der Freischaltung: Mail mit Anmeldecode an den Nutzer. Bewusst ohne Anmelde-Link: Mail-Scanner,
+// die Links vorab öffnen, würden den Code sonst entwerten – und der Code bleibt in der Homescreen-App.
+async function sendWelcome(email: string) {
+  const { data, error } = await admin.auth.admin.generateLink({ type: 'magiclink', email, options: { redirectTo: APP_URL } });
+  const code = data?.properties?.email_otp;
+  if (error || !code) console.error('Anmeldecode für Freischalt-Mail fehlgeschlagen', error?.message);
+  await sendMail(email, 'BetterMaps: Dein Konto ist freigeschaltet',
+    'Hallo,\n\ndein BetterMaps-Konto ist jetzt freigeschaltet.\n\n' +
+    (code ? `Dein Anmeldecode: ${code}\n\nGib ihn in der App unter „Konto“ ein. Der Code ist nur begrenzt gültig – ` +
+      'ist er abgelaufen, fordere in der App einfach einen neuen an:\n'
+      : 'Fordere in der App unter „Konto“ deinen Anmeldecode an:\n') + `${APP_URL}\n`);
+}
+
+// Anmeldung anfragen (ohne Login). Nur bei „approved“ fordert die App danach einen Code an.
+const EMAIL_RE = /^[^\s@]{1,64}@[^\s@.]+(\.[^\s@.]+)*\.[^\s@.]{2,}$/;
+async function handleLogin(req: Request) {
+  const b = await req.json().catch(() => null);
+  const email = typeof b?.email === 'string' ? b.email.trim().toLowerCase() : '';
+  if (email.length > 254 || !EMAIL_RE.test(email)) return json(req, { error: 'Bitte gib eine gültige E-Mail-Adresse ein.' }, 400);
+  const uid = await userIdByEmail(email);
+  if (uid) {
+    // Bestehendes Konto (auch ältere, noch nicht freigeschaltete): Profil sicherstellen, Status melden.
+    const { error } = await admin.from('profiles').upsert({ id: uid }, { onConflict: 'id', ignoreDuplicates: true });
+    if (error) throw new Error(error.message);
+    const status = await profileStatus(uid);
+    if (status === 'pending') await openRequest(email, clientIp(req));
+    return json(req, { status });
+  }
+  const r = await openRequest(email, clientIp(req));
+  if (r.status === 'limited') {
+    return json(req, { error: 'Gerade gibt es sehr viele neue Anmeldungen. Bitte versuch es später noch einmal.' }, 429);
+  }
+  if (r.status === 'approved') { await ensureApprovedUser(email); return json(req, { status: 'approved' }); } // Konto fehlte
+  return json(req, { status: r.status });
+}
+
+// Noch nicht freigeschaltetes Konto meldet sich (ältere Konten aus der Zeit vor den Anfragen).
+async function requestApprovalLater(req: Request, email: string) {
+  if (email) await openRequest(email.toLowerCase(), clientIp(req)).catch(e => console.error(e));
 }
 
 async function handleApprove(req: Request) {
   const b = await req.json().catch(() => null);
-  const uid = typeof b?.uid === 'string' ? b.uid : '';
+  const id = typeof b?.uid === 'string' ? b.uid : '';
   const exp = Number(b?.exp);
-  if (!APPROVE_SECRET || !/^[0-9a-f-]{36}$/.test(uid) || !Number.isInteger(exp) || typeof b?.sig !== 'string'
-    || !sameText(b.sig, await sign(uid, exp))) {
+  if (!APPROVE_SECRET || !/^[0-9a-f-]{36}$/.test(id) || !Number.isInteger(exp) || typeof b?.sig !== 'string'
+    || !sameText(b.sig, await sign(id, exp))) {
     return json(req, { error: 'Ungültiger Freischalt-Link.' }, 403);
   }
   if (exp < Date.now() / 1000) return json(req, { error: 'Der Freischalt-Link ist abgelaufen.' }, 403);
-  const { data: u } = await admin.auth.admin.getUserById(uid);
-  const email = u?.user?.email ?? '';
-  if (!u?.user) return json(req, { error: 'Konto nicht gefunden.' }, 404);
-  const status = await profileStatus(uid);
-  if (b.action === 'info') return json(req, { email, status });
-  if (b.action !== 'approve' && b.action !== 'reject') return json(req, { error: 'Ungültige Anfrage.' }, 400);
-  const next = b.action === 'approve' ? 'approved' : 'rejected';
-  const { error } = await admin.from('profiles').upsert({ id: uid, status: next, decided_at: new Date().toISOString() });
-  if (error) throw new Error(error.message);
-  if (next === 'approved' && status !== 'approved' && SMTP_USER && SMTP_PASS) {
-    await sendMail(email, 'BetterMaps: Dein Konto ist freigeschaltet',
-      `Hallo,\n\ndein BetterMaps-Konto ist jetzt freigeschaltet. Du kannst sofort suchen:\n${APP_URL}\n`)
-      .catch(e => console.error('Bestätigungs-Mail fehlgeschlagen', e));
+  let reqId = id;
+  let row = (await rpc<{ email: string; status: Decision }[]>('login_request_get', { p_id: id }))[0];
+  if (!row) {
+    // Ältere Links enthalten die Konto-ID statt der Anfrage.
+    const { data: u } = await admin.auth.admin.getUserById(id);
+    const email = u?.user?.email?.toLowerCase();
+    if (!email) return json(req, { error: 'Anfrage nicht gefunden.' }, 404);
+    const r = await openRequest(email, null);
+    if (!r.id) return json(req, { error: 'Bitte später noch einmal versuchen.' }, 503);
+    reqId = r.id;
+    row = { email, status: r.status as Decision };
   }
-  return json(req, { email, status: next });
+  const email = row.email;
+  if (b.action === 'info') return json(req, { email, status: row.status });
+  if (b.action !== 'approve' && b.action !== 'reject') return json(req, { error: 'Ungültige Anfrage.' }, 400);
+  if (b.action === 'approve') {
+    await ensureApprovedUser(email);
+    const changed = await rpc<boolean>('login_request_decide', { p_id: reqId, p_status: 'approved' });
+    if (changed && SMTP_USER && SMTP_PASS) await sendWelcome(email).catch(e => console.error('Bestätigungs-Mail fehlgeschlagen', e));
+    return json(req, { email, status: 'approved' });
+  }
+  await rpc('login_request_decide', { p_id: reqId, p_status: 'rejected' });
+  const uid = await userIdByEmail(email);
+  if (uid) {
+    const { error } = await admin.from('profiles').upsert({ id: uid, status: 'rejected', decided_at: new Date().toISOString() });
+    if (error) throw new Error(error.message);
+  }
+  return json(req, { email, status: 'rejected' });
 }
 
 async function quota(uid: string, n: number) {
@@ -258,6 +343,9 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors(req) });
   const path = new URL(req.url).pathname.replace(/^.*\/api/, '') || '/';
 
+  if (req.method === 'POST' && path === '/login') {
+    try { return await handleLogin(req); } catch (e) { console.error(e); return json(req, { error: 'Serverfehler.' }, 500); }
+  }
   if (req.method === 'POST' && path === '/approve') {
     try { return await handleApprove(req); } catch (e) { console.error(e); return json(req, { error: 'Serverfehler.' }, 500); }
   }
@@ -270,7 +358,7 @@ Deno.serve(async (req) => {
     if (req.method === 'GET' && path === '/me') {
       const q = await quota(uid, 0); // legt das Profil bei Bedarf an
       const status = await profileStatus(uid);
-      if (status === 'pending') requestApprovalLater(uid, user.email);
+      if (status === 'pending') await requestApprovalLater(req, user.email);
       return json(req, { plan: q.plan, used: q.used, limit: q.daily_limit, status,
         mapsKey: status === 'approved' ? MAPS_BROWSER_KEY : '' });
     }
@@ -278,9 +366,9 @@ Deno.serve(async (req) => {
     // Alles Weitere nur für freigeschaltete Konten.
     const status = await profileStatus(uid);
     if (status !== 'approved') {
-      if (status === 'pending') requestApprovalLater(uid, user.email); // falls /me die Mail nicht ausgelöst hat
+      if (status === 'pending') await requestApprovalLater(req, user.email); // falls /me die Mail nicht ausgelöst hat
       return json(req, { error: status === 'rejected' ? 'Dein Konto wurde nicht freigeschaltet.'
-        : 'Dein Konto wartet noch auf Freischaltung. Du bekommst eine E-Mail, sobald es soweit ist.', status }, 403);
+        : 'Dein Konto wartet noch auf Freischaltung. Du bekommst eine E-Mail mit dem Anmeldecode, sobald es soweit ist.', status }, 403);
     }
 
     if (req.method === 'POST' && path === '/search') {
