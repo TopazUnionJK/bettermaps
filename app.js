@@ -135,7 +135,7 @@ function resolve(text) {
 }
 
 const RADII = [100, 200, 300, 500, 750, 1000, 1500, 2000, 5000];
-const COLORS = ['#fbbc04', '#34a853', '#c58af9', '#4ecde6', '#ff8bcb', '#8ab4f8']; // gut lesbar auf dunkel
+const COLORS = ['#fbbc04', '#34a853', '#c58af9', '#4ecde6', '#ff8bcb', '#8ab4f8']; // gut lesbar auf dunkel und hell
 const MAIN_COLOR = '#ea4335'; // Google-Maps-Rot für die Treffer
 const MAX_DIAGONAL_KM = 80;
 const OVERPASS = [
@@ -236,9 +236,16 @@ const GM_DARK = [
   { featureType: 'water', elementType: 'labels.text.stroke', stylers: [{ color: '#17263c' }] },
 ];
 
+// Hell oder dunkel nach Browser-/Systemeinstellung; die Google-Karte folgt auch beim Umschalten.
+const darkQuery = matchMedia('(prefers-color-scheme: dark)');
+const gmStyles = () => (darkQuery.matches ? GM_DARK : []);
+darkQuery.addEventListener?.('change', () => {
+  googleLayers?.['Google Maps']?._mutant?.setOptions({ styles: gmStyles() });
+});
+
 function useGoogle() {
   googleLayers = {
-    'Google Maps': L.gridLayer.googleMutant({ type: 'roadmap', maxZoom: 21, styles: GM_DARK }),
+    'Google Maps': L.gridLayer.googleMutant({ type: 'roadmap', maxZoom: 21, styles: gmStyles() }),
     'Google Satellit': L.gridLayer.googleMutant({ type: 'hybrid', maxZoom: 21 }),
   };
   map.removeLayer(osmLayer);
