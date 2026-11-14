@@ -245,21 +245,23 @@ footer { color: var(--faint); font-size: 12px; padding-top: 8px; }
 .r-details .links a { color: var(--accent); font-weight: 500; text-decoration: none; }
 
 /* ---------- Handy und Tablet hochkant ----------
-   Die Seite selbst scrollt (kein innerer Scrollbereich) – nur dann blendet Safari auf dem
-   iPhone beim Scrollen seine Leisten aus und lässt den Inhalt darunter durchscheinen.
-   Die Karte steht fest oben, das Blatt (#panel) beginnt darunter und schiebt sich beim
-   Hochscrollen über die Karte. Stufe "peek" (Karte im Vollbild) setzt app.js per transform. */
+   Die Karte steht fest oben (42 % der Höhe) und bleibt immer frei; das Blatt (#panel) füllt den
+   Rest, gescrollt wird nur darin. Stufe "peek" (Karte im Vollbild) schiebt app.js per transform
+   nach unten. Beim Tippen in ein Feld (Klasse .typing) darf das Blatt nach oben über die Karte,
+   damit Auswahlliste und Tastatur Platz haben. */
 @media (max-width: 760px) {
-  body { display: block; height: auto; min-height: 100lvh; }
+  html, body { overflow: hidden; overscroll-behavior: none; }
+  body { display: block; height: 100dvh; }
   #map { position: fixed; top: 0; left: 0; right: 0; height: 42svh; }
   #panel {
-    position: relative; z-index: 1001;
-    width: 100%; min-height: 100lvh;
-    margin-top: calc(42svh - 18px);
+    position: fixed; z-index: 1001; left: 0; right: 0; bottom: 0;
+    top: calc(42svh - 18px);
+    width: 100%;
     border: 0; border-radius: 20px 20px 0 0;
     box-shadow: 0 -6px 20px var(--shadow);
     transition: transform .3s cubic-bezier(.2, .8, .2, 1);
   }
+  body.typing #panel { top: env(safe-area-inset-top, 0px); }
   #grip {
     display: block; flex: none; width: 100%; height: 26px; min-height: 26px; padding: 0;
     background: transparent; border: 0; border-radius: 0; touch-action: none; cursor: grab;
@@ -267,8 +269,8 @@ footer { color: var(--faint); font-size: 12px; padding-top: 8px; }
   #grip::before { content: ""; display: block; width: 36px; height: 4px; margin: 0 auto; border-radius: 2px; background: var(--disabled); }
   #progress { top: 24px; }
   #sheetBody {
-    overflow: visible;
-    /* unten Luft, damit der letzte Treffer über Safaris schwebende Leiste scrollen kann */
+    overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+    /* unten Luft für Safaris schwebende Leiste bzw. den Home-Balken */
     padding: 0 max(14px, env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
   }
   header { margin-bottom: 12px; }

@@ -838,8 +838,8 @@ function attachPicker(input, onPick, extras = []) {
     list.scrollTop = 0;
     // Handy: Feld nach oben holen, damit Liste und Tastatur Platz haben
     if (wasHidden && narrow.matches) {
-      const top = input.getBoundingClientRect().top;
-      if (top > 140) window.scrollBy({ top: top - 100, behavior: 'smooth' });
+      const top = input.getBoundingClientRect().top - sheetBody.getBoundingClientRect().top;
+      if (top > 90) sheetBody.scrollBy({ top: top - 60, behavior: 'smooth' });
     }
   };
   const mark = i => {
@@ -1047,10 +1047,10 @@ $('#editSearch').onclick = expandForm;
 narrow.addEventListener('change', expandForm);
 
 // ---------- Bottom Sheet (nur schmale Bildschirme) ----------
-// Die Seite selbst scrollt – nur so blendet Safari auf dem iPhone seine Leisten beim Scrollen aus.
-//   half = Ausgangslage: Karte oben, Blatt darunter · hochscrollen = Blatt schiebt sich über die Karte
-//   peek = Karte im Vollbild: ganz oben am Griff (oder im Blatt) nach unten ziehen; Tipp/hochziehen holt es zurück
-const sheet = $('#panel'), grip = $('#grip'), mapEl = $('#map');
+// Karte oben bleibt immer frei, gescrollt wird nur im Blatt (#sheetBody).
+//   half = Ausgangslage: Karte oben, Liste darunter
+//   peek = Karte im Vollbild: am Griff (oder ganz oben in der Liste) nach unten ziehen; Tipp/hochziehen holt es zurück
+const sheet = $('#panel'), grip = $('#grip'), mapEl = $('#map'), sheetBody = $('#sheetBody');
 const SHEET_PEEK = 110; // sichtbare Höhe des Blatts im Karten-Vollbild
 let sheetState = 'half', sheetOffset = 0, mapResizeTimer;
 
@@ -1092,9 +1092,11 @@ sheet.addEventListener('touchmove', e => {
   if (!drag.active) {
     const dy = y - drag.y0;
     if (Math.abs(dy) < 6) return;
-    // Das Blatt selbst bewegen wir nur im Karten-Vollbild oder ganz oben beim Herunterziehen;
-    // alles andere ist normales Scrollen der Seite (dabei blendet Safari seine Leisten aus).
-    const moveSheet = sheetState === 'peek' || (window.scrollY <= 0 && dy > 0);
+    // Das Blatt selbst bewegen wir im Karten-Vollbild, am Griff oder ganz oben in der Liste beim
+    // Herunterziehen; alles andere ist normales Scrollen der Liste.
+    if (document.body.classList.contains('typing')) { drag = null; return; }
+    const onGrip = e.target === grip;
+    const moveSheet = sheetState === 'peek' || ((onGrip || sheetBody.scrollTop <= 0) && dy > 0);
     if (!moveSheet) { drag = null; return; }
     drag.active = true;
     drag.y0 = y;
@@ -1120,28 +1122,40 @@ function endDrag() {
 sheet.addEventListener('touchend', endDrag);
 sheet.addEventListener('touchcancel', endDrag);
 
-// Tipp auf den Griff: Vollbild-Karte → Ausgangslage; Ausgangslage → Liste groß; Liste → Karte zeigen
-grip.addEventListener('click', () => {
-  if (sheetState === 'peek') return setSheet('half');
-  if (window.scrollY > 0) window.scrollTo({ top: 0, behavior: 'smooth' });
-  else window.scrollTo({ top: sheet.offsetTop, behavior: 'smooth' });
-});
+// Tipp auf den Griff: Karte im Vollbild ↔ Ausgangslage
+grip.addEventListener('click', () => setSheet(sheetState === 'peek' ? 'half' : 'peek'));
 
 // Mausrad/Trackpad (schmales Fenster am Rechner): ganz oben weiter "hochscrollen" = Karte im Vollbild
 let lastWheel = 0;
 window.addEventListener('wheel', e => {
   if (!narrow.matches) return;
-  const intoPeek = sheetState === 'half' && window.scrollY <= 0 && e.deltaY < 0;
+  const intoPeek = sheetState === 'half' && sheetBody.scrollTop <= 0 && e.deltaY < 0 && sheet.contains(e.target);
   const outOfPeek = sheetState === 'peek' && e.deltaY > 0;
-  if (!intoPeek && !outOfPeek) return; // normales Scrollen der Seite
+  if (!intoPeek && !outOfPeek) return; // normales Scrollen der Liste
   e.preventDefault();
   if (e.timeStamp - lastWheel < 450) return;
   lastWheel = e.timeStamp;
   setSheet(intoPeek ? 'peek' : 'half');
 }, { passive: false });
 
-// Falls die Seite im Karten-Vollbild doch gescrollt wird (z. B. Tastatur), zurück in die Ausgangslage
-window.addEventListener('scroll', () => { if (sheetState === 'peek' && window.scrollY > 4) setSheet('half', { sync: true }); }, { passive: true });
+// Tippen in ein Feld: Blatt nach oben über die Karte, damit Auswahlliste und Tastatur Platz haben.
+let typingTimer;
+sheet.addEventListener('focusin', e => {
+  if (!narrow.matches || !e.target.matches('input:not([type=checkbox]):not([type=radio])')) return;
+  clearTimeout(typingTimer);
+  if (sheetState === 'peek') setSheet('half', { sync: true });
+  document.body.classList.add('typing');
+});
+sheet.addEventListener('focusout', () => {
+  // kurz warten: Wechsel ins nächste Feld oder Tipp in die Auswahlliste
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(() => {
+    if (!sheet.contains(document.activeElement) || !document.activeElement.matches('input')) {
+      document.body.classList.remove('typing');
+      window.scrollTo(0, 0); // iOS verschiebt die Seite beim Einblenden der Tastatur
+    }
+  }, 300);
+});
 
 narrow.addEventListener('change', () => { setSheet('half', { sync: true }); map.invalidateSize(); });
 window.addEventListener('resize', () => { if (sheetState === 'peek') setSheet('peek', { sync: true }); });
@@ -1382,7 +1396,7 @@ function render(totalMain, where) {
   const list = $('#results');
   list.replaceChildren();
   // Handy: Blatt auf die mittlere Stufe, damit Karte und erste Treffer zusammen sichtbar sind
-  window.scrollTo(0, 0);
+  sheetBody.scrollTop = 0;
   setSheet('half', { sync: true });
   results.forEach((r, idx) => {
     r.marker = L.circleMarker([r.lat, r.lon], { radius: 9, color: '#fff', weight: 2, fillColor: MAIN_COLOR, fillOpacity: 1 })
@@ -1435,22 +1449,11 @@ function select(idx, fromList) {
   });
 
   if (fromList) {
-    // Handy: Das Blatt liegt über der Karte. So wenig wie möglich scrollen, dass die Zeile samt
-    // Zusatzinfos ganz zu sehen ist – dann bleibt möglichst viel Karte frei.
-    let visibleMap = map.getSize().y;
-    if (narrow.matches) {
-      const box = r.li.getBoundingClientRect();
-      const top = box.top + window.scrollY, bottom = box.bottom + window.scrollY;
-      const target = Math.max(0, Math.min(bottom - window.innerHeight + 16, top - 8));
-      window.scrollTo({ top: target, behavior: 'smooth' });
-      visibleMap = Math.max(visibleMap - target, 0);
-    }
+    if (narrow.matches) r.li.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); // Zusatzinfos sichtbar
     // Umkreis einpassen, dann zwei Stufen weiter heraus, damit die Umgebung sichtbar bleibt
     map.stop();
     const z = Math.max(map.getBoundsZoom(L.latLng(r.lat, r.lon).toBounds(maxRadius * 2.4)) - 2, 3);
-    // Treffer in die Mitte des sichtbaren Kartenteils setzen
-    const shift = visibleMap > 60 ? (map.getSize().y - visibleMap) / 2 : 0;
-    map.setView(map.unproject(map.project([r.lat, r.lon], z).add([0, shift]), z), z);
+    map.setView([r.lat, r.lon], z);
   } else {
     // Klick auf der Karte: Zeile in der Liste zeigen
     if (narrow.matches && sheetState === 'peek') setSheet('half');
