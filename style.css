@@ -310,3 +310,7 @@ footer { color: var(--faint); font-size: 12px; padding-top: 8px; }
 #approveBox h2 { margin: 0 0 8px; font-size: 18px; }
 #approveBox p { margin: 0 0 16px; word-break: break-word; }
 #approveBox .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Stecknadel des ausgewählten Treffers */
+.pin-icon { background: none; border: 0; }
+.pin-icon svg { display: block; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .45)); }

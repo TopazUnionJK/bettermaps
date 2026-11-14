@@ -1423,8 +1423,17 @@ function render(totalMain, where) {
   }
 }
 
-const MARKER_STYLE = { radius: 9, weight: 2 };
-const MARKER_ACTIVE = { radius: 13, weight: 3.5 };
+const MARKER_STYLE = { radius: 9, weight: 2, opacity: 1, fillOpacity: 1 };
+const MARKER_HIDDEN = { opacity: 0, fillOpacity: 0 }; // ausgewählter Treffer: statt Punkt die Stecknadel
+// Stecknadel für den ausgewählten Treffer (Spitze zeigt auf den Ort)
+const PIN_ICON = L.divIcon({
+  className: 'pin-icon',
+  html: `<svg viewBox="0 0 32 44" width="34" height="46" aria-hidden="true">
+    <path d="M16 1.5C8 1.5 1.5 8 1.5 16c0 10.6 12.4 24.3 13.4 25.4a1.5 1.5 0 0 0 2.2 0C18.1 40.3 30.5 26.6 30.5 16 30.5 8 24 1.5 16 1.5z"
+      fill="${MAIN_COLOR}" stroke="#fff" stroke-width="2"/>
+    <circle cx="16" cy="16" r="6" fill="#fff"/></svg>`,
+  iconSize: [34, 46], iconAnchor: [17, 45],
+});
 
 function select(idx, fromList) {
   const { results, conds } = current;
@@ -1436,8 +1445,10 @@ function select(idx, fromList) {
   });
   r.li.classList.add('active');
   r.li.append(detailsContent(r));
-  r.marker.setStyle(MARKER_ACTIVE).bringToFront();
+  r.marker.setStyle(MARKER_HIDDEN);
   highlightLayer.clearLayers();
+  L.marker([r.lat, r.lon], { icon: PIN_ICON, zIndexOffset: 1000, keyboard: false })
+    .on('click', () => select(idx, false)).addTo(highlightLayer);
 
   let maxRadius = 150;
   r.near.forEach((hits, i) => {
