@@ -919,9 +919,10 @@ footer { color: var(--faint); font-size: 12px; padding-top: 8px; }
 .leaflet-tooltip-left::before { border-left-color: var(--surface); }
 .leaflet-tooltip-right::before { border-right-color: var(--surface); }
 
-.popup b { font-size: 15px; font-weight: 600; }
-.popup div { margin-top: 3px; }
-.popup .links { margin-top: 8px; display: flex; gap: 12px; flex-wrap: wrap; }
+.r-details { margin-top: 8px; font-size: 13.5px; color: var(--fg); cursor: default; }
+.r-details div { margin-top: 3px; }
+.r-details .links { margin-top: 8px; display: flex; gap: 16px; flex-wrap: wrap; }
+.r-details .links a { color: var(--accent); font-weight: 500; text-decoration: none; }
 
 /* ---------- Handy und Tablet hochkant ----------
    Die Seite selbst scrollt (kein innerer Scrollbereich) – nur dann blendet Safari auf dem
@@ -978,7 +979,7 @@ footer { color: var(--faint); font-size: 12px; padding-top: 8px; }
   .cond .rm { min-width: 0; padding: 0; }
   .chip { font-size: 13.5px; padding: 4px 11px 4px 9px; }
   .leaflet-popup-content { font-size: 15px; }
-  .popup .links a { padding: 6px 0; }
+  .r-details .links a { padding: 6px 0; }
 }
 
 /* Freischalt-Dialog (Link aus der Betreiber-Mail) */
@@ -3198,20 +3199,20 @@ function address(tags) {
 
 const ratingText = t => (t.rating ? `★ ${t.rating.toFixed(1).replace('.', ',')}${t.ratings ? ` (${t.ratings})` : ''}` : '');
 
-function popupContent(r) {
+// Zusatzinfos, die unter dem ausgewählten Treffer in der Liste aufklappen
+function detailsContent(r) {
   const t = r.tags;
-  const box = el('div', { className: 'popup' }, el('b', { textContent: displayName(r) }));
-  if (t.cuisine) box.append(el('div', { textContent: t.cuisine.replace(/_/g, ' ').replace(/;/g, ', ') }));
-  if (t.kind || t.rating) box.append(el('div', { textContent: [t.kind, ratingText(t)].filter(Boolean).join(' · ') }));
-  if (address(t)) box.append(el('div', { textContent: address(t) }));
+  const box = el('div', { className: 'r-details' });
   if (t.opening_hours) box.append(el('div', { textContent: '🕑 ' + t.opening_hours }));
   if (t.openNow != null) box.append(el('div', { textContent: t.openNow ? '🕑 Jetzt geöffnet' : '🕑 Jetzt geschlossen' }));
   r.near.forEach((hits, i) => {
     const c = current.conds[i];
+    const name = hits[0].p.tags?.name || hits[0].p.tags?.brand;
     box.append(el('div', {},
       el('span', { className: 'dot', style: { background: c.color, width: '9px', height: '9px', marginRight: '5px' } }),
-      `${c.label}: ${fmtDist(hits[0].d)}` + (hits.length > 1 ? ` (${hits.length} im Umkreis)` : '')));
+      `${c.label}: ${fmtDist(hits[0].d)}` + (name ? ` – ${name}` : '') + (hits.length > 1 ? ` (${hits.length} im Umkreis)` : '')));
   });
+  const phone = t.phone || t['contact:phone'];
   const links = el('div', { className: 'links' });
   const gq = t.name ? `${t.name}, ${address(t) || `${r.lat},${r.lon}`}` : `${r.lat},${r.lon}`;
   const gmaps = t.gmaps || 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(gq);
@@ -3223,6 +3224,7 @@ function popupContent(r) {
   if (!r.id.startsWith('g/')) links.append(el('a', { href: r.id.startsWith('db/') ? `https://www.openstreetmap.org/#map=19/${r.lat}/${r.lon}` : 'https://www.openstreetmap.org/' + r.id, target: '_blank', rel: 'noopener', textContent: 'OpenStreetMap' }));
   const site = t.website || t['contact:website'];
   if (site && /^https?:\/\//i.test(site)) links.append(el('a', { href: site, target: '_blank', rel: 'noopener', textContent: 'Website' }));
+  if (phone) links.append(el('a', { href: 'tel:' + phone.split(';')[0].replace(/[^\d+]/g, ''), textContent: 'Anrufen' }));
   box.append(links);
   return box;
 }
@@ -3260,7 +3262,6 @@ function render(totalMain, where) {
   setSheet('half', { sync: true });
   results.forEach((r, idx) => {
     r.marker = L.circleMarker([r.lat, r.lon], { radius: 9, color: '#fff', weight: 2, fillColor: MAIN_COLOR, fillOpacity: 1 })
-      .bindPopup(() => popupContent(r))
       .on('click', () => select(idx, false))
       .addTo(resultLayer);
 
@@ -3269,7 +3270,8 @@ function render(totalMain, where) {
     r.near.forEach((hits, i) => chips.append(el('span', { className: 'chip' },
       el('span', { className: 'dot', style: { background: conds[i].color, width: '9px', height: '9px' } }),
       `${conds[i].label} ${fmtDist(hits[0].d)}`)));
-    r.li = el('li', { onclick: () => select(idx, true) },
+    // Klicks in den aufgeklappten Zusatzinfos (Links) wählen nicht erneut aus
+    r.li = el('li', { onclick: e => { if (!e.target.closest('.r-details')) select(idx, true); } },
       el('div', { className: 'r-name', textContent: displayName(r) }),
       sub ? el('div', { className: 'r-sub', textContent: sub }) : null,
       conds.length ? chips : null);
@@ -3283,11 +3285,20 @@ function render(totalMain, where) {
   }
 }
 
+const MARKER_STYLE = { radius: 9, weight: 2 };
+const MARKER_ACTIVE = { radius: 13, weight: 3.5 };
+
 function select(idx, fromList) {
   const { results, conds } = current;
   const r = results[idx];
-  results.forEach(x => x.li.classList.remove('active'));
+  results.forEach(x => {
+    x.li.classList.remove('active');
+    x.li.querySelector('.r-details')?.remove();
+    x.marker.setStyle(MARKER_STYLE);
+  });
   r.li.classList.add('active');
+  r.li.append(detailsContent(r));
+  r.marker.setStyle(MARKER_ACTIVE).bringToFront();
   highlightLayer.clearLayers();
 
   let maxRadius = 150;
@@ -3300,18 +3311,26 @@ function select(idx, fromList) {
   });
 
   if (fromList) {
-    // Handy: Karte wieder zeigen, falls das Blatt sie gerade verdeckt
-    if (narrow.matches && window.scrollY > 0) window.scrollTo({ top: 0, behavior: 'smooth' }); // Karte freilegen
-    // Ohne Animation schwenken: sonst überschreibt sie das automatische Einpassen des Popups
-    // und es ragt auf kleinen Karten (Handy) oben aus dem Bild.
-    map.stop(); // eine noch laufende Kartenanimation würde die Position verfälschen
-    map.fitBounds(L.latLng(r.lat, r.lon).toBounds(maxRadius * 2.4), { animate: false });
-    r.marker.openPopup();
-    const pop = r.marker.getPopup().getElement()?.getBoundingClientRect();
-    const box = map.getContainer().getBoundingClientRect();
-    if (pop && pop.top < box.top + 8) map.panBy([0, pop.top - box.top - 8], { animate: false });
-  } else if (!narrow.matches) {
-    r.li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    // Handy: Das Blatt liegt über der Karte. So wenig wie möglich scrollen, dass die Zeile samt
+    // Zusatzinfos ganz zu sehen ist – dann bleibt möglichst viel Karte frei.
+    let visibleMap = map.getSize().y;
+    if (narrow.matches) {
+      const box = r.li.getBoundingClientRect();
+      const top = box.top + window.scrollY, bottom = box.bottom + window.scrollY;
+      const target = Math.max(0, Math.min(bottom - window.innerHeight + 16, top - 8));
+      window.scrollTo({ top: target, behavior: 'smooth' });
+      visibleMap = Math.max(visibleMap - target, 0);
+    }
+    // Umkreis einpassen, dann zwei Stufen weiter heraus, damit die Umgebung sichtbar bleibt
+    map.stop();
+    const z = Math.max(map.getBoundsZoom(L.latLng(r.lat, r.lon).toBounds(maxRadius * 2.4)) - 2, 3);
+    // Treffer in die Mitte des sichtbaren Kartenteils setzen
+    const shift = visibleMap > 60 ? (map.getSize().y - visibleMap) / 2 : 0;
+    map.setView(map.unproject(map.project([r.lat, r.lon], z).add([0, shift]), z), z);
+  } else {
+    // Klick auf der Karte: Zeile in der Liste zeigen
+    if (narrow.matches && sheetState === 'peek') setSheet('half');
+    requestAnimationFrame(() => r.li.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   }
 }
 

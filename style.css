@@ -239,9 +239,10 @@ footer { color: var(--faint); font-size: 12px; padding-top: 8px; }
 .leaflet-tooltip-left::before { border-left-color: var(--surface); }
 .leaflet-tooltip-right::before { border-right-color: var(--surface); }
 
-.popup b { font-size: 15px; font-weight: 600; }
-.popup div { margin-top: 3px; }
-.popup .links { margin-top: 8px; display: flex; gap: 12px; flex-wrap: wrap; }
+.r-details { margin-top: 8px; font-size: 13.5px; color: var(--fg); cursor: default; }
+.r-details div { margin-top: 3px; }
+.r-details .links { margin-top: 8px; display: flex; gap: 16px; flex-wrap: wrap; }
+.r-details .links a { color: var(--accent); font-weight: 500; text-decoration: none; }
 
 /* ---------- Handy und Tablet hochkant ----------
    Die Seite selbst scrollt (kein innerer Scrollbereich) – nur dann blendet Safari auf dem
@@ -298,7 +299,7 @@ footer { color: var(--faint); font-size: 12px; padding-top: 8px; }
   .cond .rm { min-width: 0; padding: 0; }
   .chip { font-size: 13.5px; padding: 4px 11px 4px 9px; }
   .leaflet-popup-content { font-size: 15px; }
-  .popup .links a { padding: 6px 0; }
+  .r-details .links a { padding: 6px 0; }
 }
 
 /* Freischalt-Dialog (Link aus der Betreiber-Mail) */
