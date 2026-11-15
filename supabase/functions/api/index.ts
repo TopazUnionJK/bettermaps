@@ -13,9 +13,11 @@ const SECRET_KEY = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') ?? '{}').defa
   ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const PLACES_KEY = Deno.env.get('GOOGLE_PLACES_KEY') ?? '';
 const MAPS_BROWSER_KEY = Deno.env.get('GOOGLE_MAPS_BROWSER_KEY') ?? '';
-// Freischaltung neuer Konten: E-Mail an ADMIN_EMAIL über Gmail (SMTP_USER + App-Passwort SMTP_PASS),
+// Freischaltung neuer Konten: E-Mail an ADMIN_EMAIL über SMTP_HOST (Standard Gmail, z. B. smtp.ionos.de)
+// mit SMTP_USER + SMTP_PASS,
 // Links signiert mit APPROVE_SECRET.
 const ADMIN_EMAIL = Deno.env.get('ADMIN_EMAIL') ?? '';
+const SMTP_HOST = Deno.env.get('SMTP_HOST') || 'smtp.gmail.com';
 const SMTP_USER = Deno.env.get('SMTP_USER') ?? '';
 const SMTP_PASS = Deno.env.get('SMTP_PASS') ?? '';
 const APPROVE_SECRET = Deno.env.get('APPROVE_SECRET') ?? '';
@@ -80,7 +82,7 @@ function sameText(a: string, b: string) { // Vergleich in konstanter Zeit
 
 async function sendMail(to: string, subject: string, text: string) {
   const t = nodemailer.createTransport({
-    host: 'smtp.gmail.com', port: 465, secure: true, auth: { user: SMTP_USER, pass: SMTP_PASS },
+    host: SMTP_HOST, port: 465, secure: true, auth: { user: SMTP_USER, pass: SMTP_PASS },
     connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 15000,
   });
   await t.sendMail({ from: `NextToMaps <${SMTP_USER}>`, to, subject, text });
