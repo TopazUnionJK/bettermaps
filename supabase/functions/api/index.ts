@@ -22,6 +22,8 @@ const APPROVE_SECRET = Deno.env.get('APPROVE_SECRET') ?? '';
 const APP_URL = 'https://topazunionjk.github.io/bettermaps/';
 
 const ALLOWED_ORIGINS = [
+  'https://nexttomaps.com',
+  'https://www.nexttomaps.com',
   'https://topazunionjk.github.io',
   'http://localhost:5173',
   'http://127.0.0.1:5173',

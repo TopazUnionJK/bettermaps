@@ -19,7 +19,7 @@ Orte finden, bei denen auch die Umgebung passt – z. B. ein Restaurant in Rosen
 - Limits in `private.settings`: `daily_limit_free`, `daily_limit_pro`, `daily_limit_global` (alle Nutzer zusammen)
 - Secrets der Edge Function:
   - `GOOGLE_PLACES_KEY`: Server-Schlüssel, nur „Places API (New)“ erlaubt
-  - `GOOGLE_MAPS_BROWSER_KEY`: Browser-Schlüssel, nur „Maps JavaScript API“, Websites `https://topazunionjk.github.io/*`
+  - `GOOGLE_MAPS_BROWSER_KEY`: Browser-Schlüssel, nur „Maps JavaScript API“, Websites `https://nexttomaps.com/*`
 - Freischaltung neuer Konten: Eine neue Adresse legt nur eine Anmeldeanfrage an (`private.login_request`,
   höchstens 3 pro IP und 30 insgesamt pro Stunde), und an `ADMIN_EMAIL` geht eine Mail mit einem Link
   (30 Tage gültig), der in der App „Freischalten“/„Ablehnen“ anbietet. Erst beim Freischalten entsteht das
@@ -27,7 +27,7 @@ Orte finden, bei denen auch die Umgebung passt – z. B. ein Restaurant in Rosen
   Sign In / Providers „Allow new users to sign up“ ausschalten, damit niemand an der Anfrage vorbei ein Konto anlegt.
   Secrets: `ADMIN_EMAIL`, `APPROVE_SECRET` (zufällig), `SMTP_USER` (Gmail-Adresse), `SMTP_PASS` (Gmail-App-Passwort).
   Von Hand: `update public.profiles set status = 'approved' where id = (select id from auth.users where email = '…');`
-- Auth → URL Configuration: Site URL `https://topazunionjk.github.io/bettermaps/`, zusätzlich `http://localhost:5173/` als Redirect-URL
+- Auth → URL Configuration: Site URL `https://nexttomaps.com/`, zusätzlich `http://localhost:5173/` als Redirect-URL
 
 Nutzer auf Pro setzen (bis ein Zahlungsanbieter angebunden ist):
 
