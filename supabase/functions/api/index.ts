@@ -19,7 +19,7 @@ const ADMIN_EMAIL = Deno.env.get('ADMIN_EMAIL') ?? '';
 const SMTP_USER = Deno.env.get('SMTP_USER') ?? '';
 const SMTP_PASS = Deno.env.get('SMTP_PASS') ?? '';
 const APPROVE_SECRET = Deno.env.get('APPROVE_SECRET') ?? '';
-const APP_URL = 'https://nexttomaps.com/';
+const APP_URL = 'https://nexttomaps.com/app/';
 
 const ALLOWED_ORIGINS = [
   'https://nexttomaps.com',

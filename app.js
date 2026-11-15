@@ -418,7 +418,7 @@ if (sb) {
   acctMessage('Anmeldung nicht verfügbar (Bibliothek konnte nicht geladen werden).', true);
 }
 renderAccount();
-if (location.protocol === 'file:') acctMessage('Anmelden geht nur in der Web-Version: https://nexttomaps.com/', true);
+if (location.protocol === 'file:') acctMessage('Anmelden geht nur in der Web-Version: https://nexttomaps.com/app/', true);
 
 // Die Anmelde-E-Mail enthält Code und Link (eigener E-Mail-Versand in Supabase, Vorlage „Magic Link“).
 // Mit Code bleibt die Anmeldung in der Homescreen-App, statt in Safari zu landen.

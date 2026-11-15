@@ -8,10 +8,10 @@
   <meta name="apple-mobile-web-app-title" content="NextToMaps">
   <meta name="theme-color" content="#0b0e13" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)">
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png">
-  <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="icon" href="icon-192.png">
+  <link rel="manifest" href="../manifest.webmanifest">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="icon" href="../icon.svg" type="image/svg+xml">
+  <link rel="icon" href="../icon-192.png">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>NextToMaps – Suche mit Umgebungs-Bedingungen</title>
   <style>
@@ -1086,7 +1086,7 @@ footer { color: var(--faint); font-size: 12px; padding-top: 8px; }
       </details>
     </details>
 
-    <footer>Daten: © OpenStreetMap-Mitwirkende bzw. Google · Entfernungen sind Luftlinie</footer>
+    <footer><a href="../">Über NextToMaps</a> · Daten: © OpenStreetMap-Mitwirkende bzw. Google · Entfernungen sind Luftlinie</footer>
     </div>
   </aside>
 
@@ -2307,7 +2307,7 @@ if (sb) {
   acctMessage('Anmeldung nicht verfügbar (Bibliothek konnte nicht geladen werden).', true);
 }
 renderAccount();
-if (location.protocol === 'file:') acctMessage('Anmelden geht nur in der Web-Version: https://nexttomaps.com/', true);
+if (location.protocol === 'file:') acctMessage('Anmelden geht nur in der Web-Version: https://nexttomaps.com/app/', true);
 
 // Die Anmelde-E-Mail enthält Code und Link (eigener E-Mail-Versand in Supabase, Vorlage „Magic Link“).
 // Mit Code bleibt die Anmeldung in der Homescreen-App, statt in Safari zu landen.

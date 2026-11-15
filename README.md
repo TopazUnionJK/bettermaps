@@ -27,7 +27,7 @@ Orte finden, bei denen auch die Umgebung passt – z. B. ein Restaurant in Rosen
   Sign In / Providers „Allow new users to sign up“ ausschalten, damit niemand an der Anfrage vorbei ein Konto anlegt.
   Secrets: `ADMIN_EMAIL`, `APPROVE_SECRET` (zufällig), `SMTP_USER` (Gmail-Adresse), `SMTP_PASS` (Gmail-App-Passwort).
   Von Hand: `update public.profiles set status = 'approved' where id = (select id from auth.users where email = '…');`
-- Auth → URL Configuration: Site URL `https://nexttomaps.com/`, zusätzlich `http://localhost:5173/` als Redirect-URL
+- Auth → URL Configuration: Site URL `https://nexttomaps.com/`, Redirect-URL `https://nexttomaps.com/app/`, zusätzlich `http://localhost:5173/` als Redirect-URL
 
 Nutzer auf Pro setzen (bis ein Zahlungsanbieter angebunden ist):
 

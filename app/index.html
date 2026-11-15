@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="NextToMaps">
+  <meta name="theme-color" content="#0b0e13" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)">
+  <link rel="manifest" href="../manifest.webmanifest">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="icon" href="../icon.svg" type="image/svg+xml">
+  <link rel="icon" href="../icon-192.png">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>NextToMaps – Suche mit Umgebungs-Bedingungen</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="../style.css?v=e201d668">
+</head>
+<body>
+  <aside id="panel" data-state="half">
+    <button type="button" id="grip" aria-label="Bereich vergrößern oder verkleinern"></button>
+    <div id="progress" aria-hidden="true"><span></span></div>
+    <div id="sheetBody">
+    <header>
+      <h1><svg viewBox="0 0 32 44" aria-hidden="true"><path d="M16 1C7.7 1 1 7.7 1 16c0 11 15 27 15 27s15-16 15-27C31 7.7 24.3 1 16 1z" fill="var(--accent)"/><path d="M16 9v14M9 16h14" stroke="#fff" stroke-width="3.6" stroke-linecap="round"/></svg><span><b>NextTo</b>Maps</span></h1>
+      <p>Orte finden, bei denen auch die Umgebung passt.</p>
+    </header>
+
+    <button type="button" id="editSearch" class="ghost" hidden></button>
+
+    <form id="form">
+      <div class="row2">
+        <label>Was?
+          <input id="main" placeholder="z. B. Restaurant, Pizza, Eisdiele …" autocomplete="off">
+        </label>
+        <label>Wo?
+          <span class="placeWrap">
+            <input id="place" list="placeList" placeholder="Um mich herum – oder Stadt, Ort …" autocomplete="off">
+            <button type="button" id="useMe" title="Um mich herum" aria-label="Um mich herum suchen">◎</button>
+          </span>
+        </label>
+      </div>
+      <datalist id="placeList"><option value="Um mich herum"></option></datalist>
+
+      <fieldset>
+        <legend>In der Nähe muss es geben</legend>
+        <div id="conds"></div>
+        <button type="button" id="addCond" class="ghost">+ Bedingung hinzufügen</button>
+      </fieldset>
+
+      <div id="sourceRow" class="source" hidden>
+        <span>Daten</span>
+        <div class="seg">
+          <button type="button" data-src="google">Google · schnell</button>
+          <button type="button" data-src="osm">OpenStreetMap</button>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="submit" id="go">Suchen</button>
+        <button type="button" id="searchView" class="ghost">Im Kartenausschnitt suchen</button>
+      </div>
+    </form>
+
+    <div id="status" role="status"></div>
+    <ol id="results"></ol>
+
+    <details id="account">
+      <summary>Konto: <span id="acctState">nicht angemeldet</span></summary>
+      <div id="acctOut">
+        <p>Melde dich mit deiner E-Mail-Adresse an, um zu suchen. Du bekommst eine E-Mail mit einem
+          Anmeldecode, ein Passwort brauchst du nicht. Neue Konten werden zuerst geprüft und freigeschaltet.</p>
+        <form id="loginForm" class="keyrow">
+          <input id="email" type="email" placeholder="deine@email.de" autocomplete="email" required>
+          <button type="submit" id="sendLink">Code senden</button>
+        </form>
+        <form id="codeForm" class="keyrow" hidden>
+          <input id="otp" inputmode="numeric" autocomplete="one-time-code" placeholder="Code aus der E-Mail" maxlength="10">
+          <button type="submit">Anmelden</button>
+        </form>
+      </div>
+      <div id="acctIn" hidden>
+        <p id="acctInfo"></p>
+        <button type="button" id="logout" class="ghost">Abmelden</button>
+      </div>
+      <div id="acctMsg" class="r-sub"></div>
+
+      <details id="mapSettings">
+        <summary>Eigener Google-Schlüssel · Karte: <span id="mapProvider">OpenStreetMap</span></summary>
+        <p>Nur für Entwickler: Mit einem eigenen Schlüssel fragt die App Google direkt ab, ohne Konto
+          und ohne Tageslimit. Der Schlüssel wird nur in diesem Browser gespeichert.</p>
+        <div class="keyrow">
+          <input id="gmKey" type="password" placeholder="Google Maps API-Schlüssel" autocomplete="off">
+          <button type="button" id="gmSave">Speichern</button>
+          <button type="button" id="gmClear" class="ghost" title="Schlüssel entfernen">✕</button>
+        </div>
+        <div id="gmMsg" class="r-sub"></div>
+      </details>
+    </details>
+
+    <footer><a href="../">Über NextToMaps</a> · Daten: © OpenStreetMap-Mitwirkende bzw. Google · Entfernungen sind Luftlinie</footer>
+    </div>
+  </aside>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.gridlayer.googlemutant@0.14.1/dist/Leaflet.GoogleMutant.js"></script>
+  <script src="../vendor/supabase.js"></script>
+  <script src="../app.js?v=d8e7148f"></script>
+</body>
+</html>
