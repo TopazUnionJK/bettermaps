@@ -130,6 +130,8 @@
     .price li { padding: 7px 0 7px 28px; position: relative; font-size: 16px; }
     .price li::before { content: "✓"; position: absolute; left: 0; color: var(--mint); font-weight: 800; }
     .price .btn { width: 100%; }
+    .btn.soon { opacity: .55; cursor: default; box-shadow: none; }
+    .btn.soon:hover { transform: none; }
     .fine { color: var(--faint); font-size: 14.5px; margin-top: 22px; max-width: 760px; }
 
     /* Fragen */
@@ -344,7 +346,7 @@
           <li>Unbegrenzt OpenStreetMap</li>
           <li>Monatlich kündbar</li>
         </ul>
-        <a class="btn primary" href="index.html">Plus wählen</a>
+        <span class="btn primary soon" aria-disabled="true">Plus · Coming soon</span>
       </div>
       <div class="price">
         <h3>Pro</h3>
@@ -355,7 +357,7 @@
           <li>Alles aus Plus</li>
           <li>Im Jahresabo 109 € (1 Monat geschenkt)</li>
         </ul>
-        <a class="btn ghost" href="index.html">Pro wählen</a>
+        <span class="btn ghost soon" aria-disabled="true">Pro · Coming soon</span>
       </div>
     </div>
     <p class="fine">Kontingent aufgebraucht? Mit OpenStreetMap geht es sofort kostenlos weiter, oder du buchst 100 Google-Abfragen für 4,99 € nach. Eine Suche braucht meist 1 bis 3 Google-Abfragen. Alle Preise inklusive Mehrwertsteuer.</p>
