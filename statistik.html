@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Statistik – NextToMaps</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0b0e13" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <style>
+    :root { --bg: #0b0e13; --card: #151a22; --line: #252c38; --fg: #f2f4f7; --muted: #9aa4b2; --red: #ff5a4d; --mint: #3ddc97; --blue: #6aa8ff;
+      --font: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    @media (prefers-color-scheme: light) { :root { --bg: #f6f4ef; --card: #fff; --line: #e2ddd2; --fg: #14171c; --muted: #5a6370; --red: #e8402f; --mint: #0f9d63; --blue: #1a66d6; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+    .wrap { width: min(1080px, 100% - 32px); margin: 0 auto; }
+    nav { border-bottom: 1px solid var(--line); }
+    nav .wrap { display: flex; align-items: center; gap: 16px; height: 60px; }
+    .logo { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 18px; text-decoration: none; color: inherit; margin-right: auto; white-space: nowrap; }
+    .logo svg { width: 20px; height: 28px; } .logo b { color: var(--red); }
+    .seg { display: flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
+    .seg button { font: inherit; font-size: 14px; font-weight: 600; border: 0; background: none; color: var(--muted); padding: 6px 12px; border-radius: 999px; cursor: pointer; }
+    .seg button[aria-pressed="true"] { background: var(--red); color: #fff; }
+    main { padding: 28px 0 60px; }
+    h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -.02em; }
+    h2 { font-size: 17px; margin: 0 0 14px; }
+    .muted { color: var(--muted); }
+    #msg { margin: 24px 0; }
+    #msg a { color: var(--red); }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 22px 0; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; }
+    .kpi .v { font-size: 30px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .kpi .l { color: var(--muted); font-size: 13.5px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+    @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+    .chart { display: flex; align-items: flex-end; gap: 3px; height: 160px; border-bottom: 1px solid var(--line); }
+    .chart .col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; }
+    .chart .bar { background: var(--red); border-radius: 4px 4px 0 0; min-height: 0; }
+    .chart.alt .bar { background: var(--blue); }
+    .axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-top: 6px; }
+    .legend { color: var(--muted); font-size: 13px; margin-top: 8px; }
+    table { width: 100%; border-collapse: collapse; }
+    td, th { text-align: left; padding: 7px 0; border-bottom: 1px solid var(--line); font-weight: 400; }
+    th { color: var(--muted); font-size: 13px; }
+    td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+    tr:last-child td { border-bottom: 0; }
+  </style>
+</head>
+<body>
+<nav><div class="wrap">
+  <a class="logo" href="./"><svg viewBox="0 0 32 44" aria-hidden="true"><path d="M16 1C7.7 1 1 7.7 1 16c0 11 15 27 15 27s15-16 15-27C31 7.7 24.3 1 16 1z" fill="var(--red)"/><path d="M16 9v14M9 16h14" stroke="#fff" stroke-width="3.6" stroke-linecap="round"/></svg><span><b>NextTo</b>Maps</span></a>
+  <div class="seg" role="group" aria-label="Zeitraum">
+    <button type="button" data-days="7">7 T</button>
+    <button type="button" data-days="30" aria-pressed="true">30 T</button>
+    <button type="button" data-days="90">90 T</button>
+  </div>
+</div></nav>
+<main><div class="wrap">
+  <h1>Statistik</h1>
+  <div class="muted">Besucher werden pro Tag gezählt, ohne Cookies und ohne gespeicherte IP-Adressen.</div>
+  <div id="msg" class="muted">Lade …</div>
+  <div id="out" hidden>
+    <div class="kpis" id="kpis"></div>
+    <div class="card">
+      <h2>Besucher pro Tag</h2>
+      <div class="chart" id="chartVisitors"></div>
+      <div class="axis" id="axis1"></div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h2>Google-Abfragen pro Tag</h2>
+        <div class="chart alt" id="chartGoogle"></div>
+        <div class="axis" id="axis2"></div>
+        <div class="legend" id="googleCost"></div>
+      </div>
+      <div class="card">
+        <h2>Woher die Besucher kommen</h2>
+        <table id="refs"></table>
+      </div>
+      <div class="card">
+        <h2>Seiten</h2>
+        <table id="pages"></table>
+      </div>
+      <div class="card">
+        <h2>Geräte und Konten</h2>
+        <table id="devices"></table>
+      </div>
+    </div>
+  </div>
+</div></main>
+
+<script src="vendor/supabase.js"></script>
+<script>
+  const SB_URL = 'https://icqensripxkuiarkrvsb.supabase.co';
+  const SB_KEY = 'sb_publishable_Y0VsKjxvgrJicGVZvPrehw_ivOYfuxF';
+  const sb = window.supabase.createClient(SB_URL, SB_KEY, {
+    auth: { flowType: 'implicit', detectSessionInUrl: false, persistSession: true, autoRefreshToken: true },
+  });
+  const $ = s => document.querySelector(s);
+  const fmt = n => Number(n).toLocaleString('de-DE');
+  const pct = (a, b) => b ? Math.round(a / b * 100) + ' %' : '–';
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const PAGE_NAMES = { '/': 'Landingpage', '/app/': 'App', '/impressum.html': 'Impressum', '/datenschutz.html': 'Datenschutz' };
+  const dayLabel = d => new Date(d + 'T12:00:00').toLocaleDateString('de-DE', { day: 'numeric', month: 'numeric' });
+
+  function msg(html) { $('#msg').innerHTML = html; $('#msg').hidden = false; $('#out').hidden = true; }
+
+  function bars(el, axis, days, key, label) {
+    const max = Math.max(1, ...days.map(d => d[key]));
+    el.innerHTML = days.map(d =>
+      `<div class="col" title="${dayLabel(d.day)}: ${fmt(d[key])} ${label}"><div class="bar" style="height:${d[key] / max * 100}%"></div></div>`).join('');
+    axis.innerHTML = `<span>${dayLabel(days[0].day)}</span><span>max. ${fmt(max)}</span><span>${dayLabel(days[days.length - 1].day)}</span>`;
+  }
+
+  function rows(el, head, list) {
+    el.innerHTML = `<tr>${head.map((h, i) => `<th${i ? ' class="n"' : ''}>${h}</th>`).join('')}</tr>` +
+      (list.length ? list.map(r => `<tr>${r.map((c, i) => `<td${i ? ' class="n"' : ''}>${c}</td>`).join('')}</tr>`).join('')
+        : `<tr><td class="muted" colspan="${head.length}">Noch keine Daten</td></tr>`);
+  }
+
+  let loadSeq = 0;
+  async function load(days) {
+    const seq = ++loadSeq;
+    document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.days == days)));
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) return msg('Bitte zuerst <a href="app/">in der App anmelden</a>, dann diese Seite neu laden.');
+    let res;
+    try {
+      res = await fetch(`${SB_URL}/functions/v1/api/stats?days=${days}`, { headers: { Authorization: 'Bearer ' + session.access_token } });
+    } catch { return msg('Server nicht erreichbar.'); }
+    const s = await res.json().catch(() => ({}));
+    if (seq !== loadSeq) return; // inzwischen anderer Zeitraum gewählt
+    if (!res.ok) return msg(esc(s.error || 'Fehler ' + res.status));
+    if (!s.totals || !Array.isArray(s.days)) return msg('Unerwartete Antwort vom Server.');
+
+    const t = s.totals;
+    $('#kpis').innerHTML = [
+      [t.visitors, 'Besucher (pro Tag gezählt)'],
+      [t.views, 'Seitenaufrufe'],
+      [pct(t.landingToApp, t.landingVisitors), 'Landingpage → App'],
+      [t.signups, 'Neue Registrierungen'],
+      [t.googleCalls, 'Google-Abfragen'],
+      [t.accountsApproved, 'Freigeschaltete Konten'],
+    ].map(([v, l]) => `<div class="card kpi"><div class="v">${typeof v === 'number' ? fmt(v) : v}</div><div class="l">${l}</div></div>`).join('');
+
+    bars($('#chartVisitors'), $('#axis1'), s.days, 'visitors', 'Besucher');
+    bars($('#chartGoogle'), $('#axis2'), s.days, 'googleCalls', 'Google-Abfragen');
+    $('#googleCost').textContent = `Höchstens ca. ${(t.googleCalls * 0.035).toLocaleString('de-DE', { maximumFractionDigits: 2 })} $ Google-Kosten im Zeitraum (vor Freikontingent)`;
+
+    rows($('#refs'), ['Quelle', 'Besucher'], s.refs.map(r => [esc(r.ref), fmt(r.visitors)]));
+    rows($('#pages'), ['Seite', 'Besucher', 'Aufrufe'], s.pages.map(p => [esc(PAGE_NAMES[p.path] || p.path), fmt(p.visitors), fmt(p.views)]));
+    const dev = { mobile: 'Handy', desktop: 'Computer / Tablet' };
+    rows($('#devices'), ['', 'Anzahl'], [
+      ...s.devices.map(d => [dev[d.device] || esc(d.device), fmt(d.visitors)]),
+      ['Freigeschaltete Konten', fmt(t.accountsApproved)],
+      ['Warten auf Freischaltung', fmt(t.accountsPending)],
+      ['Pro-Konten', fmt(t.proAccounts)],
+    ]);
+    $('#msg').hidden = true; $('#out').hidden = false;
+  }
+
+  document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => load(+b.dataset.days)));
+  load(30);
+</script>
+</body>
+</html>

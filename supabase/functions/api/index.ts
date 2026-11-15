@@ -5,6 +5,8 @@
 //   POST /api/search  → eine Seite Google „Text Search (New)“ (zählt 1 Abfrage)
 //   POST /api/near    → POIs aus der eigenen OSM-Datenbank im Umkreis der Treffer (kostenlos)
 //   POST /api/area    → POIs einer Kategorie im Rechteck (OpenStreetMap-Modus, kostenlos)
+//   POST /api/hit     → Seitenaufruf für die eigene Statistik zählen (ohne Login, ohne Cookies)
+//   GET  /api/stats   → Statistik der letzten Tage (nur für STATS_EMAILS bzw. ADMIN_EMAIL)
 import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
 import nodemailer from 'npm:nodemailer@6.9.16';
 
@@ -22,6 +24,9 @@ const SMTP_USER = Deno.env.get('SMTP_USER') ?? '';
 const SMTP_PASS = Deno.env.get('SMTP_PASS') ?? '';
 const APPROVE_SECRET = Deno.env.get('APPROVE_SECRET') ?? '';
 const APP_URL = 'https://nexttomaps.com/app/';
+// Wer die Statistik sehen darf (kommagetrennt); ohne Angabe nur ADMIN_EMAIL.
+const STATS_EMAILS = (Deno.env.get('STATS_EMAILS') || ADMIN_EMAIL).split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+const COUNTED_ORIGINS = ['https://nexttomaps.com', 'https://www.nexttomaps.com'];
 
 const ALLOWED_ORIGINS = [
   'https://nexttomaps.com',
@@ -343,6 +348,23 @@ async function areaPois(cat: string, r: { s: number; n: number; w: number; e: nu
   return { points: out, capped: false };
 }
 
+// ---------- Statistik ----------
+// Gespeichert werden Seite, Herkunfts-Domain und Gerätetyp. IP und Browser-Kennung gehen nur in einen
+// Tages-Hash ein (siehe Migration pageviews), damit Besucher pro Tag einmal gezählt werden.
+async function handleHit(req: Request) {
+  if (!COUNTED_ORIGINS.includes(req.headers.get('origin') ?? '')) return; // lokale Tests nicht mitzählen
+  const raw = (await req.text()).slice(0, 1000);
+  let b: { path?: unknown; ref?: unknown; device?: unknown } = {};
+  try { b = JSON.parse(raw); } catch { return; }
+  const path = typeof b.path === 'string' ? b.path : '';
+  const device = b.device === 'mobile' ? 'mobile' : 'desktop';
+  const ref = typeof b.ref === 'string' && /^[a-z0-9.:_-]{1,60}$/i.test(b.ref) ? b.ref.toLowerCase() : '';
+  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim();
+  const ua = (req.headers.get('user-agent') ?? '').slice(0, 300);
+  if (/bot|crawl|spider|slurp|preview|headless/i.test(ua)) return;
+  await rpc('track_pageview', { p_path: path, p_ref: ref, p_device: device, p_ip: ip, p_ua: ua });
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors(req) });
   const path = new URL(req.url).pathname.replace(/^.*\/api/, '') || '/';
@@ -354,9 +376,21 @@ Deno.serve(async (req) => {
     try { return await handleApprove(req); } catch (e) { console.error(e); return json(req, { error: 'Serverfehler.' }, 500); }
   }
 
+  if (req.method === 'POST' && path === '/hit') {
+    try { await handleHit(req); } catch (e) { console.error('Statistik', e); }
+    return new Response(null, { status: 204, headers: cors(req) });
+  }
+
   const user = await currentUser(req);
   if (!user) return json(req, { error: 'Bitte anmelden.' }, 401);
   const uid = user.id;
+
+  if (req.method === 'GET' && path === '/stats') {
+    if (!STATS_EMAILS.includes(user.email.toLowerCase())) return json(req, { error: 'Kein Zugriff auf die Statistik.' }, 403);
+    const days = Math.min(400, Math.max(1, Math.floor(Number(new URL(req.url).searchParams.get('days'))) || 30));
+    try { return json(req, await rpc('site_stats', { p_days: days })); }
+    catch (e) { console.error(e); return json(req, { error: 'Serverfehler.' }, 500); }
+  }
 
   try {
     if (req.method === 'GET' && path === '/me') {

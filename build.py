@@ -39,6 +39,7 @@ sub(r'<script src="https://unpkg\.com/leaflet@[^"]*"></script>', f"<script>\n{js
 sub(r'<script src="https://unpkg\.com/leaflet\.gridlayer[^"]*"></script>', f"<script>\n{js('vendor/googlemutant.js')}\n</script>")
 sub(r'<script src="(?:\.\./)?vendor/supabase\.js"></script>', f"<script>\n{js('vendor/supabase.js')}\n</script>")
 sub(r'<script src="(?:\.\./)?app\.js(\?v=\w+)?"></script>', f"<script>\n{js('app.js')}\n</script>")
+sub(r'<script src="(?:\.\./)?count\.js" defer></script>\n', '')  # Statistik nur in der Web-Version
 
 out = root / "bettermaps-mobil.html"
 out.write_text(html, encoding="utf-8")
