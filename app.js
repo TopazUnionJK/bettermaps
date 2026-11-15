@@ -15,6 +15,10 @@ const CATEGORIES = [
   { label: 'Eisdiele', kw: ['eisdiele', 'eiscaf', '=eis'], filters: [{ amenity: 'ice_cream' }, { amenity: 'cafe', cuisine: { re: 'ice_cream' } }] },
   { label: 'Bar', kw: ['=bar', '=bars', 'kneipe', '=pub', '=pubs', 'cocktailbar'], filters: [{ amenity: 'bar' }, { amenity: 'pub' }] },
   { label: 'Hotel', kw: ['hotel', 'unterkunft', 'unterkünfte', 'pension'], filters: [{ tourism: 'hotel' }, { tourism: 'guest_house' }] },
+  { label: 'Campingplatz', kw: ['camping', 'zeltplatz', 'zeltplätz', '=zelten'], filters: [{ tourism: 'camp_site' }] },
+  { label: 'Wohnmobilstellplatz', kw: ['wohnmobil', 'reisemobil', 'stellplatz', 'stellplätz', '=womo', 'camper', 'wohnwagen'], filters: [{ tourism: 'caravan_site' }, { amenity: 'parking', motorhome: { re: '^(yes|designated)$' } }] },
+  { label: 'Entsorgungsstation', kw: ['entsorgung', 'grauwasser', 'schwarzwasser', 'chemietoilette'], filters: [{ amenity: 'sanitary_dump_station' }] },
+  { label: 'Wasserstelle', kw: ['wasserstelle', 'frischwasser', 'wassertank'], filters: [{ amenity: 'water_point' }] },
   { label: 'Bäckerei', kw: ['bäcker', 'backstube'], filters: [{ shop: 'bakery' }] },
   { label: 'Metzgerei', kw: ['metzger', 'fleischer'], filters: [{ shop: 'butcher' }] },
   { label: 'Supermarkt', kw: ['supermarkt', 'supermärkt', 'lebensmittel', 'einkaufen'], filters: [{ shop: 'supermarket' }] },
@@ -136,7 +140,7 @@ function resolve(text) {
 
 const RADII = [100, 200, 300, 500, 750, 1000, 1500, 2000, 5000];
 const COLORS = ['#fbbc04', '#34a853', '#c58af9', '#4ecde6', '#ff8bcb', '#8ab4f8']; // gut lesbar auf dunkel und hell
-const MAIN_COLOR = '#ea4335'; // Google-Maps-Rot für die Treffer
+const MAIN_COLOR = '#f04a3c'; // Markenrot (wie Landingpage) für die Treffer
 const MAX_DIAGONAL_KM = 80;
 const OVERPASS = [
   'https://overpass-api.de/api/interpreter',
@@ -1213,7 +1217,7 @@ function locate() {
     navigator.geolocation.getCurrentPosition(
       pos => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy }),
       err => reject(new Error(
-        err.code === 1 ? 'Standortfreigabe abgelehnt. Auf dem iPhone: Einstellungen → Datenschutz → Ortungsdienste → Safari-Websites (bzw. BetterMaps) erlauben.'
+        err.code === 1 ? 'Standortfreigabe abgelehnt. Auf dem iPhone: Einstellungen → Datenschutz → Ortungsdienste → Safari-Websites (bzw. NextToMaps) erlauben.'
         : err.code === 3 ? 'Der Standort konnte nicht rechtzeitig bestimmt werden. Bitte nochmal versuchen.'
         : 'Der Standort ist gerade nicht verfügbar.')),
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });

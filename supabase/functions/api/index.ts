@@ -1,4 +1,4 @@
-// BetterMaps-Backend: hält den Google-Schlüssel geheim, prüft Login und Tageslimit.
+// NextToMaps-Backend: hält den Google-Schlüssel geheim, prüft Login und Tageslimit.
 //   GET  /api/me      → Tarif, heutige Nutzung, Limit, Freischaltung, Schlüssel für die Kartenanzeige
 //   POST /api/login   → Anmeldung anfragen (ohne Login): neues Konto wartet auf Freischaltung, erst dann gibt es einen Code
 //   POST /api/approve → Freischalten/Ablehnen über den signierten Link aus der Betreiber-Mail (ohne Login)
@@ -81,7 +81,7 @@ async function sendMail(to: string, subject: string, text: string) {
     host: 'smtp.gmail.com', port: 465, secure: true, auth: { user: SMTP_USER, pass: SMTP_PASS },
     connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 15000,
   });
-  await t.sendMail({ from: `BetterMaps <${SMTP_USER}>`, to, subject, text });
+  await t.sendMail({ from: `NextToMaps <${SMTP_USER}>`, to, subject, text });
 }
 
 async function profileStatus(uid: string) {
@@ -129,8 +129,8 @@ async function notifyAdmin(id: string, email: string) {
   try {
     const exp = Math.floor(Date.now() / 1000) + LINK_DAYS * 86400;
     const link = `${APP_URL}?approve=${encodeURIComponent(id)}&exp=${exp}&sig=${await sign(id, exp)}`;
-    await sendMail(ADMIN_EMAIL, `BetterMaps: Neue Registrierung ${email}`,
-      `${email} möchte sich bei BetterMaps anmelden und wartet auf Freischaltung.\n\n` +
+    await sendMail(ADMIN_EMAIL, `NextToMaps: Neue Registrierung ${email}`,
+      `${email} möchte sich bei NextToMaps anmelden und wartet auf Freischaltung.\n\n` +
       `Freischalten oder ablehnen (Link gilt ${LINK_DAYS} Tage):\n${link}\n`);
     ok = true;
   } catch (e) {
@@ -158,8 +158,8 @@ async function sendWelcome(email: string) {
   const { data, error } = await admin.auth.admin.generateLink({ type: 'magiclink', email, options: { redirectTo: APP_URL } });
   const code = data?.properties?.email_otp;
   if (error || !code) console.error('Anmeldecode für Freischalt-Mail fehlgeschlagen', error?.message);
-  await sendMail(email, 'BetterMaps: Dein Konto ist freigeschaltet',
-    'Hallo,\n\ndein BetterMaps-Konto ist jetzt freigeschaltet.\n\n' +
+  await sendMail(email, 'NextToMaps: Dein Konto ist freigeschaltet',
+    'Hallo,\n\ndein NextToMaps-Konto ist jetzt freigeschaltet.\n\n' +
     (code ? `Dein Anmeldecode: ${code}\n\nGib ihn in der App unter „Konto“ ein. Der Code ist nur begrenzt gültig – ` +
       'ist er abgelaufen, fordere in der App einfach einen neuen an:\n'
       : 'Fordere in der App unter „Konto“ deinen Anmeldecode an:\n') + `${APP_URL}\n`);

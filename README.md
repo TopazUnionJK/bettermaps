@@ -1,4 +1,4 @@
-# BetterMaps
+# NextToMaps
 
 Orte finden, bei denen auch die Umgebung passt – z. B. ein Restaurant in Rosenheim mit Spielplatz und E-Ladesäule in 500 m Umkreis.
 

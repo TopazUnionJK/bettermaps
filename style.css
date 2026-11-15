@@ -1,22 +1,22 @@
-/* Erscheinungsbild angelehnt an Google Maps im Dark Mode (iPhone) */
+/* Farben wie auf der Landingpage (landing.html): dunkles Tintenblau bzw. warmes Hell, Markenrot */
 :root {
   color-scheme: dark;
-  --bg: #1f1f1f;        /* Grundfläche (Trefferliste) */
-  --surface: #2b2c2f;   /* Karten/Flächen, z. B. Suchkarte */
-  --surface2: #3a3b3f;  /* Eingabefelder, Chips */
-  --fg: #e8eaed;
-  --muted: #9aa0a6;
-  --line: #3c4043;
-  --accent: #8ab4f8;
-  --accent-fg: #202124;
-  --danger: #f28b82;
-  --map-bg: #17181a;
-  --hover: #26272a;
-  --active: #283142;
-  --faint: #80868b;     /* Platzhalter, Fußzeile */
-  --disabled: #5f6368;
-  --glass: rgba(31, 31, 31, .74);
-  --shadow: var(--shadow);
+  --bg: #0b0e13;        /* Grundfläche (Trefferliste) */
+  --surface: #151a22;   /* Karten/Flächen, z. B. Suchkarte */
+  --surface2: #1d232e;  /* Eingabefelder, Chips */
+  --fg: #f2f4f7;
+  --muted: #9aa4b2;
+  --line: #252c38;
+  --accent: #ff5a4d;    /* Markenrot */
+  --accent-fg: #1a0806;
+  --danger: #ffb454;    /* Fehler in Bernstein, damit sie sich vom Markenrot abheben */
+  --map-bg: #131922;
+  --hover: #1a202a;
+  --active: #2b1b1d;
+  --faint: #6b7584;     /* Platzhalter, Fußzeile */
+  --disabled: #3d4655;
+  --glass: rgba(11, 14, 19, .74);
+  --shadow: rgba(0, 0, 0, .45);
   --osm-filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.88) saturate(.55);
   --layers-icon-filter: invert(1) brightness(1.6);
 }
@@ -25,22 +25,22 @@
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
-    --bg: #f1f3f4;
+    --bg: #f6f4ef;
     --surface: #ffffff;
-    --surface2: #f1f3f4;
-    --fg: #202124;
-    --muted: #5f6368;
-    --line: #dadce0;
-    --accent: #1a73e8;
+    --surface2: #efece5;
+    --fg: #14171c;
+    --muted: #5a6370;
+    --line: #e2ddd2;
+    --accent: #e8402f;
     --accent-fg: #ffffff;
-    --danger: #d93025;
-    --map-bg: #e8eaed;
-    --hover: #e8eaed;
-    --active: #e8f0fe;
-    --faint: #80868b;
-    --disabled: #bdc1c6;
-    --glass: rgba(255, 255, 255, .78);
-    --shadow: rgba(60, 64, 67, .22);
+    --danger: #b45309;
+    --map-bg: #eef0ea;
+    --hover: #efece5;
+    --active: #fde9e5;
+    --faint: #8a919c;
+    --disabled: #c9c3b6;
+    --glass: rgba(246, 244, 239, .8);
+    --shadow: rgba(40, 30, 10, .16);
     --osm-filter: none;
     --layers-icon-filter: none;
   }
@@ -54,7 +54,7 @@ html, body { height: 100%; margin: 0; background: var(--bg); }
 body {
   height: 100dvh;
   display: flex;
-  font: 15px/1.45 -apple-system, "SF Pro Text", "Google Sans", Roboto, system-ui, "Segoe UI", sans-serif;
+  font: 15px/1.45 ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   color: var(--fg);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
@@ -102,7 +102,8 @@ body.loading #progress { opacity: 1; visibility: visible; }
 #map { flex: 1; min-width: 0; background: var(--map-bg); }
 
 header { margin-bottom: 14px; }
-header h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+header h1 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+header h1 b { color: var(--accent); font-weight: 800; }
 header p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
 
 /* ---------- Suchkarte: hebt sich als eigene Fläche von der Trefferliste ab ---------- */
