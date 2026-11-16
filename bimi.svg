@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny-ps" viewBox="0 0 64 64">
+  <title>NextToMaps</title>
+  <rect width="64" height="64" fill="#0b0e13"/>
+  <g transform="translate(32 32) scale(0.92) translate(-32 -31.45)">
+    <ellipse cx="32" cy="46" rx="20" ry="6.5" fill="#34a853" fill-opacity="0.12" stroke="#34a853" stroke-width="2.4"/>
+    <g transform="translate(32 46) scale(0.88) translate(-16 -43)">
+      <path d="M16 1C7.7 1 1 7.7 1 16c0 11 15 27 15 27s15-16 15-27C31 7.7 24.3 1 16 1z" fill="#ff5a4d"/>
+      <path d="M16 9v14M9 16h14" fill="none" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round"/>
+    </g>
+    <circle cx="46" cy="49.5" r="3.6" fill="#fbbc04" stroke="#ffffff" stroke-width="1.5"/>
+    <circle cx="17.5" cy="48.5" r="3.6" fill="#34a853" stroke="#ffffff" stroke-width="1.5"/>
+  </g>
+</svg>
