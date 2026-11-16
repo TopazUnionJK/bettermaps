@@ -167,29 +167,44 @@ async function ensureApprovedUser(email: string, lang: Lang = 'de') {
   return uid;
 }
 
-// Nach der Freischaltung: Mail mit Anmeldecode an den Nutzer. Bewusst ohne Anmelde-Link: Mail-Scanner,
-// die Links vorab öffnen, würden den Code sonst entwerten – und der Code bleibt in der Homescreen-App.
-async function sendWelcome(email: string, lang: Lang = 'de') {
-  const url = lang === 'en' ? APP_URL_EN : APP_URL;
-  const { data, error } = await admin.auth.admin.generateLink({ type: 'magiclink', email, options: { redirectTo: url } });
+// Anmeldecode erzeugen (gleicher Code wie bei signInWithOtp, prüfbar mit verifyOtp type 'email').
+// Die Mails enthalten bewusst keinen Anmelde-Link: Mail-Scanner, die Links vorab öffnen, würden den Code
+// sonst entwerten – und der Code funktioniert auch in der Homescreen-App.
+async function signInCode(email: string) {
+  const { data, error } = await admin.auth.admin.generateLink({ type: 'magiclink', email });
   const code = data?.properties?.email_otp;
-  if (error || !code) console.error('Anmeldecode für Freischalt-Mail fehlgeschlagen', error?.message);
-  if (lang === 'en') {
-    await sendMail(email, 'NextToMaps: Your account is ready',
-      'Hello,\n\nyour NextToMaps account has been approved.\n\n' +
-      (code ? `Your sign-in code: ${code}\n\nEnter it in the app under "Account". The code is only valid for a limited time – ` +
-        'if it has expired, simply request a new one in the app:\n'
-        : 'Request your sign-in code in the app under "Account":\n') + `${url}\n`);
-    return;
-  }
-  await sendMail(email, 'NextToMaps: Dein Konto ist freigeschaltet',
-    'Hallo,\n\ndein NextToMaps-Konto ist jetzt freigeschaltet.\n\n' +
-    (code ? `Dein Anmeldecode: ${code}\n\nGib ihn in der App unter „Konto“ ein. Der Code ist nur begrenzt gültig – ` +
-      'ist er abgelaufen, fordere in der App einfach einen neuen an:\n'
-      : 'Fordere in der App unter „Konto“ deinen Anmeldecode an:\n') + `${url}\n`);
+  if (error || !code) throw new Error('Anmeldecode fehlgeschlagen: ' + (error?.message ?? 'kein Code'));
+  return code;
 }
 
-// Anmeldung anfragen (ohne Login). Nur bei „approved“ fordert die App danach einen Code an.
+// Mails an Nutzer: zuerst Englisch, darunter Deutsch.
+async function sendUserMail(email: string, subject: string, en: string, de: string, lang: Lang) {
+  await sendMail(email, subject, `${en}\n\n———\n\n${de}\n\n${lang === 'en' ? APP_URL_EN : APP_URL}\n`);
+}
+
+// Nach der Freischaltung: Mail mit Anmeldecode an den Nutzer.
+async function sendWelcome(email: string, lang: Lang = 'de') {
+  const code = await signInCode(email).catch(e => { console.error(e); return ''; });
+  await sendUserMail(email, 'NextToMaps: Your account is ready',
+    'Hello,\n\nyour NextToMaps account has been approved.\n\n' + (code
+      ? `Your sign-in code: ${code}\n\nEnter it in the app under "Account". The code is only valid for a limited time – if it has expired, simply request a new one in the app.`
+      : 'Request your sign-in code in the app under "Account".'),
+    'Hallo,\n\ndein NextToMaps-Konto ist jetzt freigeschaltet.\n\n' + (code
+      ? `Dein Anmeldecode: ${code}\n\nGib ihn in der App unter „Konto“ ein. Der Code ist nur begrenzt gültig – ist er abgelaufen, fordere in der App einfach einen neuen an.`
+      : 'Fordere in der App unter „Konto“ deinen Anmeldecode an.'),
+    lang);
+}
+
+// Anmeldecode für ein freigeschaltetes Konto.
+async function sendCode(email: string, lang: Lang) {
+  const code = await signInCode(email);
+  await sendUserMail(email, `NextToMaps sign-in code: ${code}`,
+    `Your NextToMaps sign-in code: ${code}\n\nEnter it in the app under "Account". If you did not request it, you can ignore this email.`,
+    `Dein NextToMaps-Anmeldecode: ${code}\n\nGib ihn in der App unter „Konto“ ein. Falls du ihn nicht angefordert hast, kannst du diese Mail ignorieren.`,
+    lang);
+}
+
+// Anmeldung anfragen (ohne Login). Freigeschaltete Konten bekommen direkt den Anmeldecode per Mail.
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@.]+(\.[^\s@.]+)*\.[^\s@.]{2,}$/;
 async function handleLogin(req: Request) {
   const b = await req.json().catch(() => null);
@@ -202,21 +217,39 @@ async function handleLogin(req: Request) {
     if (error) throw new Error(error.message);
     const status = await profileStatus(uid);
     if (status === 'pending') await openRequest(email, clientIp(req), langOf(req));
-    // Sprache für die Code-Mail von Supabase merken (Vorlage fragt .Data.lang ab); nur bei freigeschalteten
-    // Konten und im Hintergrund, damit die Antwort nicht darauf wartet.
-    if (status === 'approved') {
-      const job = admin.auth.admin.updateUserById(uid, { user_metadata: { lang: langOf(req) } }).catch(e => console.error(e));
-      // deno-lint-ignore no-explicit-any
-      (globalThis as any).EdgeRuntime?.waitUntil?.(job);
-    }
+    // Freigeschaltet: Code selbst verschicken (eigene Vorlage und eigenes SMTP statt der Supabase-Mail).
+    if (status === 'approved') return await codeResponse(req, uid, email, b?.send === true);
     return json(req, { status });
   }
   const r = await openRequest(email, clientIp(req), langOf(req));
   if (r.status === 'limited') {
     return json(req, { error: tr(req, 'Gerade gibt es sehr viele neue Anmeldungen. Bitte versuch es später noch einmal.', 'There are a lot of new sign-ups right now. Please try again later.') }, 429);
   }
-  if (r.status === 'approved') { await ensureApprovedUser(email, langOf(req)); return json(req, { status: 'approved' }); } // Konto fehlte
+  if (r.status === 'approved') return await codeResponse(req, await ensureApprovedUser(email, langOf(req)), email, b?.send === true); // Konto fehlte
   return json(req, { status: r.status });
+}
+
+// Nur wenn die App es anfordert (send: true), verschickt das Backend den Code selbst; ältere App-Versionen
+// bekommen weiter 'approved' und fordern den Code wie früher bei Supabase an.
+async function codeResponse(req: Request, uid: string, email: string, send: boolean) {
+  if (!send || !SMTP_USER || !SMTP_PASS) return json(req, { status: 'approved' });
+  let entry: number | null;
+  try {
+    entry = await rpc<number | null>('code_mail_allowed', { p_uid: uid, p_ip: clientIp(req) ?? '' });
+  } catch (e) {
+    console.error('code_mail_allowed', e);
+    return json(req, { status: 'approved' }); // Fallback: App fordert den Code bei Supabase an
+  }
+  // Limit erreicht: Der Code aus der letzten Mail gilt weiter, die App zeigt das Eingabefeld trotzdem.
+  if (entry == null) return json(req, { status: 'sent', limited: true });
+  try {
+    await sendCode(email, langOf(req));
+  } catch (e) {
+    console.error('Code-Mail fehlgeschlagen', e);
+    await rpc('code_mail_undo', { p_id: entry }).catch(err => console.error(err));
+    return json(req, { error: tr(req, 'Die E-Mail konnte gerade nicht gesendet werden. Bitte später noch einmal versuchen.', 'The email could not be sent right now. Please try again later.') }, 502);
+  }
+  return json(req, { status: 'sent' });
 }
 
 // Noch nicht freigeschaltetes Konto meldet sich (ältere Konten aus der Zeit vor den Anfragen).

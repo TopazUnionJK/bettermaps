@@ -2,7 +2,7 @@
 
 Orte finden, bei denen auch die Umgebung passt – z. B. ein Restaurant in Rosenheim mit Spielplatz und E-Ladesäule in 500 m Umkreis.
 
-- Suche: Google Places (Text Search) über das eigene Backend, Anmeldung per E-Mail-Link
+- Suche: Google Places (Text Search) über das eigene Backend, Anmeldung per Code aus einer E-Mail
 - Karte: Google Maps (Schlüssel kommt vom Backend), sonst OpenStreetMap
 - Entwickler: mit eigenem Google-Schlüssel (nur im Browser gespeichert) direkt ohne Konto; dann auch OpenStreetMap wählbar
 - `python3 build.py` erzeugt `bettermaps-mobil.html` (alles in einer Datei) und aktualisiert die Versionskennungen in `index.html`
@@ -26,7 +26,11 @@ Orte finden, bei denen auch die Umgebung passt – z. B. ein Restaurant in Rosen
   (30 Tage gültig), der in der App „Freischalten“/„Ablehnen“ anbietet. Erst beim Freischalten entsteht das
   Supabase-Konto, und der Nutzer bekommt seinen Anmeldecode per Mail. In Supabase unter Authentication →
   Sign In / Providers „Allow new users to sign up“ ausschalten, damit niemand an der Anfrage vorbei ein Konto anlegt.
-  Secrets: `ADMIN_EMAIL`, `APPROVE_SECRET` (zufällig), `SMTP_USER` (Gmail-Adresse), `SMTP_PASS` (Gmail-App-Passwort).
+  Secrets: `ADMIN_EMAIL`, `APPROVE_SECRET` (zufällig), `SMTP_HOST` (z. B. `smtp.ionos.de`, Standard Gmail),
+  `SMTP_USER` (Absenderadresse), `SMTP_PASS` (Postfach- bzw. App-Passwort).
+- Anmeldecodes verschickt ebenfalls die Edge Function über diese SMTP-Daten (Mail Englisch, darunter Deutsch),
+  nicht Supabase Auth. Limit je Konto 1 Mail pro 60 s und 6 pro Stunde, je IP 30 pro Stunde (`private.code_mail`).
+  Nur ohne SMTP-Secrets fällt die App auf die Mail von Supabase Auth zurück.
   Von Hand: `update public.profiles set status = 'approved' where id = (select id from auth.users where email = '…');`
 - Auth → URL Configuration: Site URL `https://nexttomaps.com/`, Redirect-URLs `https://nexttomaps.com/app/` und `https://nexttomaps.com/en/app/`, zusätzlich `http://localhost:5173/` als Redirect-URL
 

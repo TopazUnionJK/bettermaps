@@ -427,8 +427,8 @@ if (sb) {
 renderAccount();
 if (location.protocol === 'file:') acctMessage(t('Anmelden geht nur in der Web-Version: https://nexttomaps.com/app/', 'Sign-in only works in the web version: https://nexttomaps.com/en/app/'), true);
 
-// Die Anmelde-E-Mail enthält Code und Link (eigener E-Mail-Versand in Supabase, Vorlage „Magic Link“).
-// Mit Code bleibt die Anmeldung in der Homescreen-App, statt in Safari zu landen.
+// Die Anmelde-E-Mail mit dem Code verschickt das Backend (/login mit send: true); nur als Rückfall
+// fordert die App den Code bei Supabase an. Mit Code bleibt die Anmeldung in der Homescreen-App.
 const OTP_IN_EMAIL = true;
 const PENDING_KEY = 'bm_login_pending';
 let loginEmail = '';
@@ -459,7 +459,7 @@ $('#loginForm').addEventListener('submit', async e => {
   try {
     const res = await fetch(API_URL + '/login', {
       method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SB_KEY, 'X-Lang': t('de', 'en') },
-      body: JSON.stringify({ email: loginEmail }),
+      body: JSON.stringify({ email: loginEmail, send: true }),
     });
     check = { ok: res.ok, json: await res.json().catch(() => ({})) };
   } catch {
@@ -478,19 +478,25 @@ $('#loginForm').addEventListener('submit', async e => {
     return acctMessage(t(`Danke! Deine Anmeldung wird geprüft. Sobald dein Konto freigeschaltet ist, bekommst du den Anmeldecode per E-Mail an ${loginEmail} – gib ihn dann hier ein.`,
       `Thanks! Your sign-up is being reviewed. Once your account is approved, you will receive the sign-in code by email at ${loginEmail} – enter it here.`));
   }
-  acctMessage(t('Sende E-Mail …', 'Sending email …'));
-  const { error } = await sb.auth.signInWithOtp({
-    email: loginEmail,
-    options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: false },
-  });
+  // Meist hat das Backend den Code schon verschickt ('sent'); sonst wie früher über Supabase anfordern.
+  let error = null;
+  if (check.json.status !== 'sent') {
+    acctMessage(t('Sende E-Mail …', 'Sending email …'));
+    ({ error } = await sb.auth.signInWithOtp({
+      email: loginEmail,
+      options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: false },
+    }));
+  }
   $('#sendLink').disabled = false;
   if (error) return acctMessage(/rate|seconds/i.test(error.message)
     ? t('Bitte kurz warten, bevor du eine neue E-Mail anforderst.', 'Please wait a moment before requesting another email.') : t('Fehler: ', 'Error: ') + error.message, true);
   $('#codeForm').hidden = !OTP_IN_EMAIL;
   try { localStorage.setItem(PENDING_KEY, JSON.stringify({ email: loginEmail, t: Date.now() })); } catch { /* egal */ }
   if (OTP_IN_EMAIL) $('#otp').focus();
+  if (check.json.limited) return acctMessage(t(`Es wurde gerade schon ein Code an ${loginEmail} geschickt. Gib den Code aus der neuesten E-Mail hier ein oder fordere in ein paar Minuten einen neuen an.`,
+    `A code was just sent to ${loginEmail}. Enter the code from the most recent email here, or request a new one in a few minutes.`));
   acctMessage(OTP_IN_EMAIL
-    ? t(`E-Mail an ${loginEmail} ist unterwegs. Gib den Code daraus hier ein – oder tippe auf den Link.`, `Email to ${loginEmail} is on its way. Enter the code here – or tap the link.`)
+    ? t(`E-Mail an ${loginEmail} ist unterwegs. Gib den Code daraus hier ein.`, `Email to ${loginEmail} is on its way. Enter the code from it here.`)
     : t(`E-Mail an ${loginEmail} ist unterwegs. Tippe auf den Link darin, um dich anzumelden.`, `Email to ${loginEmail} is on its way. Tap the link in it to sign in.`));
 });
 $('#codeForm').addEventListener('submit', async e => {
