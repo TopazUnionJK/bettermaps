@@ -1,5 +1,11 @@
 // Seitenaufruf für die eigene Statistik zählen: ohne Cookies, ohne gespeicherte IP-Adresse.
 // Gezählt wird nur auf nexttomaps.com und nicht, wenn der Browser „Global Privacy Control“ sendet.
+// Sprachwahl über die DE/EN-Links merken (die deutsche Startseite leitet danach nicht mehr um).
+document.addEventListener('click', function (e) {
+  var a = e.target.closest && e.target.closest('a[hreflang]');
+  if (a) try { localStorage.setItem('nttm.lang', a.getAttribute('hreflang')); } catch (err) { /* egal */ }
+});
+
 (function () {
   try {
     var own = 'nexttomaps.com';
@@ -16,7 +22,7 @@
       keepalive: true,
       body: JSON.stringify({
         // /impressum (ohne Endung) liefert GitHub Pages wie /impressum.html aus
-        path: location.pathname.replace(/index\.html$/, '').replace(/^(\/[^/.]+)$/, '$1.html'),
+        path: location.pathname.replace(/index\.html$/, '').replace(/^(.*\/[^/.]+)$/, '$1.html'),
         ref: ref,
         device: matchMedia('(max-width: 767px)').matches ? 'mobile' : 'desktop',
       }),

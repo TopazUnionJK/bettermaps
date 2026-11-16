@@ -101,7 +101,8 @@
   const fmt = n => Number(n).toLocaleString('de-DE');
   const pct = (a, b) => b ? Math.round(a / b * 100) + ' %' : '–';
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-  const PAGE_NAMES = { '/': 'Landingpage', '/app/': 'App', '/impressum.html': 'Impressum', '/datenschutz.html': 'Datenschutz' };
+  const PAGE_NAMES = { '/': 'Landingpage', '/app/': 'App', '/impressum.html': 'Impressum', '/datenschutz.html': 'Datenschutz',
+    '/en/': 'Landingpage (EN)', '/en/app/': 'App (EN)', '/en/imprint.html': 'Impressum (EN)', '/en/privacy.html': 'Datenschutz (EN)' };
   const dayLabel = d => new Date(d + 'T12:00:00').toLocaleDateString('de-DE', { day: 'numeric', month: 'numeric' });
 
   function msg(html) { $('#msg').innerHTML = html; $('#msg').hidden = false; $('#out').hidden = true; }

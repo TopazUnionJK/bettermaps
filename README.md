@@ -10,13 +10,14 @@ Orte finden, bei denen auch die Umgebung passt – z. B. ein Restaurant in Rosen
 ## Backend (Supabase-Projekt `bettermaps`, Frankfurt)
 
 - Edge Function `api` (`supabase/functions/api/index.ts`)
-  - `GET /me`: Tarif, heutige Nutzung, Kartenschlüssel
+  - `GET /me`: Tarif, Nutzung im Monat, Kartenschlüssel
   - `POST /search`: eine Google-Ergebnisseite, zählt 1 Abfrage
   - `POST /near`: Bedingungen (Spielplatz, Ladesäule …) aus der eigenen POI-Datenbank im Umkreis der Treffer, kostenlos
-- Tabellen `profiles` (Tarif `free`/`pro`, `pro_until`) und `usage` (Google-Abfragen pro Nutzer und Tag)
+- Tabellen `profiles` (Tarif `free`/`plus`/`pro`, `plan_until`, eigenes `monthly_limit` z. B. für Tester) und `usage` (Google-Abfragen pro Nutzer und Tag)
 - POI-Datenbank `private.poi_tile` (OpenStreetMap, Deutschland, Österreich, Schweiz, Italien): kompakt in Kacheln
   je Kategorie, ca. 150 MB. Außerhalb dieser Länder und bei Freitext-Bedingungen sucht die App bei Google.
-- Limits in `private.settings`: `daily_limit_free`, `daily_limit_pro`, `daily_limit_global` (alle Nutzer zusammen)
+- Limits in `private.settings`: `monthly_limit_free` (10), `monthly_limit_plus` (100), `monthly_limit_pro` (200) pro Kalendermonat,
+  `daily_limit_global` (alle Nutzer zusammen pro Tag, Kostenbremse)
 - Secrets der Edge Function:
   - `GOOGLE_PLACES_KEY`: Server-Schlüssel, nur „Places API (New)“ erlaubt
   - `GOOGLE_MAPS_BROWSER_KEY`: Browser-Schlüssel, nur „Maps JavaScript API“, Websites `https://nexttomaps.com/*`
@@ -27,13 +28,15 @@ Orte finden, bei denen auch die Umgebung passt – z. B. ein Restaurant in Rosen
   Sign In / Providers „Allow new users to sign up“ ausschalten, damit niemand an der Anfrage vorbei ein Konto anlegt.
   Secrets: `ADMIN_EMAIL`, `APPROVE_SECRET` (zufällig), `SMTP_USER` (Gmail-Adresse), `SMTP_PASS` (Gmail-App-Passwort).
   Von Hand: `update public.profiles set status = 'approved' where id = (select id from auth.users where email = '…');`
-- Auth → URL Configuration: Site URL `https://nexttomaps.com/`, Redirect-URL `https://nexttomaps.com/app/`, zusätzlich `http://localhost:5173/` als Redirect-URL
+- Auth → URL Configuration: Site URL `https://nexttomaps.com/`, Redirect-URLs `https://nexttomaps.com/app/` und `https://nexttomaps.com/en/app/`, zusätzlich `http://localhost:5173/` als Redirect-URL
 
-Nutzer auf Pro setzen (bis ein Zahlungsanbieter angebunden ist):
+Nutzer auf Plus/Pro setzen oder Testern ein eigenes Monatslimit geben (bis ein Zahlungsanbieter angebunden ist):
 
 ```sql
-update public.profiles set plan = 'pro', pro_until = now() + interval '1 month'
+update public.profiles set plan = 'pro', plan_until = now() + interval '1 month'
 where id = (select id from auth.users where email = 'kunde@example.com');
+update public.profiles set monthly_limit = 500   -- null = Limit des Tarifs
+where id = (select id from auth.users where email = 'tester@example.com');
 ```
 
 POI-Datenbank aktualisieren: läuft automatisch am 2. jedes Monats über GitHub Actions

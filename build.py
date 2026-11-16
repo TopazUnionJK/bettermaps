@@ -14,11 +14,12 @@ def data_uri(name):
 # index.html: Versionskennung an app.js/style.css hängen, damit Browser (v. a. Safari) nach
 # einer Änderung nicht die alte Datei aus dem Zwischenspeicher nehmen.
 import hashlib
-idx = read("app/index.html")
-for name in ("app.js", "style.css"):
-    v = hashlib.sha1((root / name).read_bytes()).hexdigest()[:8]
-    idx = re.sub(rf'{re.escape(name)}(\?v=\w+)?"', f'{name}?v={v}"', idx)
-(root / "app/index.html").write_text(idx, encoding="utf-8")
+for page in ("app/index.html", "en/app/index.html"):  # deutsche und englische App
+    idx = read(page)
+    for name in ("app.js", "style.css"):
+        v = hashlib.sha1((root / name).read_bytes()).hexdigest()[:8]
+        idx = re.sub(rf'{re.escape(name)}(\?v=\w+)?"', f'{name}?v={v}"', idx)
+    (root / page).write_text(idx, encoding="utf-8")
 
 leaflet_css = read("vendor/leaflet.css")
 leaflet_css = leaflet_css.replace("url(images/layers.png)", f"url({data_uri('layers.png')})")

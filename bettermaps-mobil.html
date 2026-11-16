@@ -1076,7 +1076,7 @@ footer { color: var(--faint); font-size: 12px; padding-top: 8px; }
       <details id="mapSettings">
         <summary>Eigener Google-Schlüssel · Karte: <span id="mapProvider">OpenStreetMap</span></summary>
         <p>Nur für Entwickler: Mit einem eigenen Schlüssel fragt die App Google direkt ab, ohne Konto
-          und ohne Tageslimit. Der Schlüssel wird nur in diesem Browser gespeichert.</p>
+          und ohne Kontingent. Der Schlüssel wird nur in diesem Browser gespeichert.</p>
         <div class="keyrow">
           <input id="gmKey" type="password" placeholder="Google Maps API-Schlüssel" autocomplete="off">
           <button type="button" id="gmSave">Speichern</button>
@@ -1086,7 +1086,7 @@ footer { color: var(--faint); font-size: 12px; padding-top: 8px; }
       </details>
     </details>
 
-    <footer><a href="../">Über NextToMaps</a> · <a href="../impressum.html">Impressum</a> · <a href="../datenschutz.html">Datenschutz</a> · Daten: © OpenStreetMap-Mitwirkende bzw. Google · Entfernungen sind Luftlinie</footer>
+    <footer><a href="../">Über NextToMaps</a> · <a href="../impressum.html">Impressum</a> · <a href="../datenschutz.html">Datenschutz</a> · <a href="../en/app/" hreflang="en" lang="en">English</a> · Daten: © OpenStreetMap-Mitwirkende bzw. Google · Entfernungen sind Luftlinie</footer>
     </div>
   </aside>
 
@@ -1889,6 +1889,11 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   <script>
 'use strict';
 
+// Sprache: /en/app/ setzt <html lang="en">; t('deutsch', 'english') wählt den passenden Text.
+const EN = document.documentElement.lang === 'en';
+const t = (de, en) => (EN ? en : de);
+const catName = c => (EN && c.en) || c.label; // angezeigter Kategoriename
+
 // ---------- Freitext → OpenStreetMap-Tags ----------
 // Die "Was"-Felder sind Freitext. Der Text wird in drei Stufen gedeutet:
 //   1. bekannte Begriffe (kw) → feste OSM-Tags, z. B. "Spielplatz" → leisure=playground
@@ -1897,87 +1902,87 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
 // kw: Wortanfang genügt ("restaurant" trifft auch "Restaurants"); "=wort" verlangt das exakte Wort.
 // Ein Filter passt, wenn alle seine Tags zutreffen; Wert ist ein String (exakt) oder {re} (Regex).
 const CATEGORIES = [
-  { label: 'Restaurant', food: true, kw: ['restaurant', 'gaststätte', 'gasthaus', 'gasthof', 'wirtshaus', '=lokal', '=essen'], filters: [{ amenity: 'restaurant' }] },
-  { label: 'Café', food: true, kw: ['caf', 'kaffee'], filters: [{ amenity: 'cafe' }] },
-  { label: 'Biergarten', food: true, kw: ['biergarten', 'biergärten'], filters: [{ amenity: 'biergarten' }] },
-  { label: 'Imbiss', food: true, kw: ['imbiss', 'schnellimbiss', 'fastfood', '=fast'], filters: [{ amenity: 'fast_food' }] },
-  { label: 'Eisdiele', kw: ['eisdiele', 'eiscaf', '=eis'], filters: [{ amenity: 'ice_cream' }, { amenity: 'cafe', cuisine: { re: 'ice_cream' } }] },
-  { label: 'Bar', kw: ['=bar', '=bars', 'kneipe', '=pub', '=pubs', 'cocktailbar'], filters: [{ amenity: 'bar' }, { amenity: 'pub' }] },
-  { label: 'Hotel', kw: ['hotel', 'unterkunft', 'unterkünfte', 'pension'], filters: [{ tourism: 'hotel' }, { tourism: 'guest_house' }] },
-  { label: 'Campingplatz', kw: ['camping', 'zeltplatz', 'zeltplätz', '=zelten'], filters: [{ tourism: 'camp_site' }] },
-  { label: 'Wohnmobilstellplatz', kw: ['wohnmobil', 'reisemobil', 'stellplatz', 'stellplätz', '=womo', 'camper', 'wohnwagen'], filters: [{ tourism: 'caravan_site' }, { amenity: 'parking', motorhome: { re: '^(yes|designated)$' } }] },
-  { label: 'Entsorgungsstation', kw: ['entsorgung', 'grauwasser', 'schwarzwasser', 'chemietoilette'], filters: [{ amenity: 'sanitary_dump_station' }] },
-  { label: 'Wasserstelle', kw: ['wasserstelle', 'frischwasser', 'wassertank'], filters: [{ amenity: 'water_point' }] },
-  { label: 'Bäckerei', kw: ['bäcker', 'backstube'], filters: [{ shop: 'bakery' }] },
-  { label: 'Metzgerei', kw: ['metzger', 'fleischer'], filters: [{ shop: 'butcher' }] },
-  { label: 'Supermarkt', kw: ['supermarkt', 'supermärkt', 'lebensmittel', 'einkaufen'], filters: [{ shop: 'supermarket' }] },
-  { label: 'Drogerie', kw: ['drogerie'], filters: [{ shop: 'chemist' }] },
-  { label: 'Getränkemarkt', kw: ['getränke'], filters: [{ shop: 'beverages' }] },
-  { label: 'Baumarkt', kw: ['baumarkt', 'baumärkt'], filters: [{ shop: 'doityourself' }] },
-  { label: 'Buchhandlung', kw: ['buchhandlung', 'buchladen', 'buchläden'], filters: [{ shop: 'books' }] },
-  { label: 'Blumenladen', kw: ['blumen', 'florist'], filters: [{ shop: 'florist' }] },
-  { label: 'Kiosk', kw: ['kiosk'], filters: [{ shop: 'kiosk' }] },
-  { label: 'Friseur', kw: ['friseur', 'frisör', 'barber'], filters: [{ shop: 'hairdresser' }] },
-  { label: 'Fahrradladen', kw: ['fahrradladen', 'fahrradläden', 'fahrradgeschäft', 'radladen'], filters: [{ shop: 'bicycle' }] },
-  { label: 'Spielplatz', kw: ['spielplatz', 'spielplätz', 'kinderspielpl'], filters: [{ leisure: 'playground' }] },
-  { label: 'E-Ladesäule', kw: ['ladesäule', 'eladesäule', 'ladestation', 'ladepunkt', 'schnelllade', 'wallbox', 'charger'], filters: [{ amenity: 'charging_station' }] },
-  { label: 'Parkplatz', kw: ['parkplatz', 'parkplätz', 'parkhaus', 'parkhäus', 'tiefgarage', '=parken'], filters: [{ amenity: 'parking' }] },
-  { label: 'Fahrradständer', kw: ['fahrradständer', 'radständer', 'fahrradparkpl', 'fahrradabstell'], filters: [{ amenity: 'bicycle_parking' }] },
-  { label: 'Fahrradverleih', kw: ['fahrradverleih', 'radverleih', 'leihrad', 'leihräder'], filters: [{ amenity: 'bicycle_rental' }] },
-  { label: 'Carsharing', kw: ['carsharing'], filters: [{ amenity: 'car_sharing' }] },
-  { label: 'Taxistand', kw: ['taxi'], filters: [{ amenity: 'taxi' }] },
-  { label: 'Haltestelle', kw: ['haltestelle', 'bushalte', '=bus', 'öpnv', '=tram', 'straßenbahn'], filters: [{ highway: 'bus_stop' }, { railway: 'station' }, { railway: 'halt' }, { railway: 'tram_stop' }] },
-  { label: 'Bahnhof', kw: ['bahnhof', 'bahnhöf', '=bahn', '=zug', 's bahn', 'sbahn'], filters: [{ railway: 'station' }, { railway: 'halt' }] },
-  { label: 'Park', kw: ['=park', '=parks', 'grünanlage', 'stadtpark'], filters: [{ leisure: 'park' }] },
-  { label: 'Hundewiese', kw: ['hundewiese', 'hundepark', 'hundeauslauf'], filters: [{ leisure: 'dog_park' }] },
-  { label: 'Toilette', kw: ['toilette', '=wc', '=wcs', '=klo', '=klos'], filters: [{ amenity: 'toilets' }] },
-  { label: 'Wickeltisch', kw: ['wickel'], filters: [{ changing_table: 'yes' }] },
-  { label: 'Trinkwasser', kw: ['trinkwasser', 'trinkbrunnen'], filters: [{ amenity: 'drinking_water' }] },
-  { label: 'Apotheke', kw: ['apotheke'], filters: [{ amenity: 'pharmacy' }] },
-  { label: 'Arzt', kw: ['arzt', 'ärzt', 'hausarzt', 'hausärzt', 'arztpraxis'], filters: [{ amenity: 'doctors' }] },
-  { label: 'Zahnarzt', kw: ['zahnarzt', 'zahnärzt'], filters: [{ amenity: 'dentist' }] },
-  { label: 'Krankenhaus', kw: ['krankenhaus', 'krankenhäus', 'klinik'], filters: [{ amenity: 'hospital' }] },
-  { label: 'Geldautomat', kw: ['geldautomat', 'bankautomat', '=atm'], filters: [{ amenity: 'atm' }, { amenity: 'bank', atm: 'yes' }] },
-  { label: 'Bank', kw: ['=bank', '=banken', 'sparkasse'], filters: [{ amenity: 'bank' }] },
-  { label: 'Post', kw: ['=post', 'postfiliale', 'postamt'], filters: [{ amenity: 'post_office' }] },
-  { label: 'Briefkasten', kw: ['briefkasten', 'briefkästen'], filters: [{ amenity: 'post_box' }] },
-  { label: 'Paketstation', kw: ['paketstation', 'packstation', 'paketbox'], filters: [{ amenity: 'parcel_locker' }] },
-  { label: 'Tankstelle', kw: ['tankstelle', '=tanken'], filters: [{ amenity: 'fuel' }] },
-  { label: 'Schwimmbad', kw: ['schwimmbad', 'schwimmbäd', 'freibad', 'freibäd', 'hallenbad', 'hallenbäd', 'badestelle', 'badesee'], filters: [{ leisure: 'swimming_pool', access: 'yes' }, { leisure: 'water_park' }, { leisure: 'bathing_place' }, { leisure: 'swimming_area' }, { leisure: 'sports_centre', sport: { re: 'swimming' } }] },
-  { label: 'Fitnessstudio', kw: ['fitness'], filters: [{ leisure: 'fitness_centre' }] },
-  { label: 'Sportplatz', kw: ['sportplatz', 'sportplätz', 'fußballpl', 'bolzpl'], filters: [{ leisure: 'pitch' }] },
-  { label: 'Kindergarten', kw: ['kindergarten', 'kindergärten', '=kita', '=kitas', 'krippe'], filters: [{ amenity: 'kindergarten' }] },
-  { label: 'Schule', kw: ['schule', 'grundschule', 'gymnasium', 'gymnasien'], filters: [{ amenity: 'school' }] },
-  { label: 'Bibliothek', kw: ['bibliothek', 'bücherei'], filters: [{ amenity: 'library' }] },
-  { label: 'Kino', kw: ['kino'], filters: [{ amenity: 'cinema' }] },
-  { label: 'Museum', kw: ['museum', 'museen'], filters: [{ tourism: 'museum' }] },
-  { label: 'Kirche', kw: ['kirche'], filters: [{ amenity: 'place_of_worship' }] },
-  { label: 'Polizei', kw: ['polizei'], filters: [{ amenity: 'police' }] },
+  { label: 'Restaurant', en: 'Restaurant', food: true, kw: ['restaurant', 'gaststätte', 'gasthaus', 'gasthof', 'wirtshaus', '=lokal', '=essen', '=diner', '=eatery'], filters: [{ amenity: 'restaurant' }] },
+  { label: 'Café', en: 'Café', food: true, kw: ['caf', 'kaffee', 'coffee', '=cafe', '=cafes'], filters: [{ amenity: 'cafe' }] },
+  { label: 'Biergarten', en: 'Beer garden', food: true, kw: ['biergarten', 'biergärten', 'beer garden', 'beergarden'], filters: [{ amenity: 'biergarten' }] },
+  { label: 'Imbiss', en: 'Fast food', food: true, kw: ['imbiss', 'schnellimbiss', 'fastfood', '=fast', 'fast food', 'takeaway', 'snack bar'], filters: [{ amenity: 'fast_food' }] },
+  { label: 'Eisdiele', en: 'Ice cream parlour', kw: ['eisdiele', 'eiscaf', '=eis', 'ice cream', 'gelato'], filters: [{ amenity: 'ice_cream' }, { amenity: 'cafe', cuisine: { re: 'ice_cream' } }] },
+  { label: 'Bar', en: 'Bar', kw: ['=bar', '=bars', 'kneipe', '=pub', '=pubs', 'cocktailbar', 'cocktail'], filters: [{ amenity: 'bar' }, { amenity: 'pub' }] },
+  { label: 'Hotel', en: 'Hotel', kw: ['hotel', 'unterkunft', 'unterkünfte', 'pension', 'accommodation', 'guesthouse', 'guest house', '=inn', 'lodging'], filters: [{ tourism: 'hotel' }, { tourism: 'guest_house' }] },
+  { label: 'Campingplatz', en: 'Campsite', kw: ['camping', 'zeltplatz', 'zeltplätz', '=zelten', 'campsite', 'campground', '=camping'], filters: [{ tourism: 'camp_site' }] },
+  { label: 'Wohnmobilstellplatz', en: 'Motorhome site', kw: ['wohnmobil', 'reisemobil', 'stellplatz', 'stellplätz', '=womo', 'camper', 'wohnwagen', 'motorhome', 'campervan', '=rv', 'caravan'], filters: [{ tourism: 'caravan_site' }, { amenity: 'parking', motorhome: { re: '^(yes|designated)$' } }] },
+  { label: 'Entsorgungsstation', en: 'Dump station', kw: ['entsorgung', 'grauwasser', 'schwarzwasser', 'chemietoilette', 'dump station', 'sanitary dump'], filters: [{ amenity: 'sanitary_dump_station' }] },
+  { label: 'Wasserstelle', en: 'Water point', kw: ['wasserstelle', 'frischwasser', 'wassertank', 'water point', 'water tap'], filters: [{ amenity: 'water_point' }] },
+  { label: 'Bäckerei', en: 'Bakery', kw: ['bäcker', 'backstube', 'bakery', 'bakeries', 'baker'], filters: [{ shop: 'bakery' }] },
+  { label: 'Metzgerei', en: 'Butcher', kw: ['metzger', 'fleischer', 'butcher'], filters: [{ shop: 'butcher' }] },
+  { label: 'Supermarkt', en: 'Supermarket', kw: ['supermarkt', 'supermärkt', 'lebensmittel', 'einkaufen', 'supermarket', 'grocery', 'groceries'], filters: [{ shop: 'supermarket' }] },
+  { label: 'Drogerie', en: 'Drugstore', kw: ['drogerie', 'drugstore', 'chemist'], filters: [{ shop: 'chemist' }] },
+  { label: 'Getränkemarkt', en: 'Beverage store', kw: ['getränke', 'beverage', 'drinks store', 'liquor'], filters: [{ shop: 'beverages' }] },
+  { label: 'Baumarkt', en: 'DIY store', kw: ['baumarkt', 'baumärkt', 'diy', 'hardware store', 'home improvement'], filters: [{ shop: 'doityourself' }] },
+  { label: 'Buchhandlung', en: 'Bookshop', kw: ['buchhandlung', 'buchladen', 'buchläden', 'bookshop', 'bookstore', 'books'], filters: [{ shop: 'books' }] },
+  { label: 'Blumenladen', en: 'Florist', kw: ['blumen', 'florist', 'flower'], filters: [{ shop: 'florist' }] },
+  { label: 'Kiosk', en: 'Kiosk', kw: ['kiosk', 'convenience'], filters: [{ shop: 'kiosk' }] },
+  { label: 'Friseur', en: 'Hairdresser', kw: ['friseur', 'frisör', 'barber', 'hairdresser', 'hair salon'], filters: [{ shop: 'hairdresser' }] },
+  { label: 'Fahrradladen', en: 'Bike shop', kw: ['fahrradladen', 'fahrradläden', 'fahrradgeschäft', 'radladen', 'bike shop', 'bicycle shop', 'cycle shop'], filters: [{ shop: 'bicycle' }] },
+  { label: 'Spielplatz', en: 'Playground', kw: ['spielplatz', 'spielplätz', 'kinderspielpl', 'playground'], filters: [{ leisure: 'playground' }] },
+  { label: 'E-Ladesäule', en: 'EV charger', kw: ['ladesäule', 'eladesäule', 'ladestation', 'ladepunkt', 'schnelllade', 'wallbox', 'charger', 'ev charger', 'charging station', 'charging point', 'ev charging'], filters: [{ amenity: 'charging_station' }] },
+  { label: 'Parkplatz', en: 'Parking', kw: ['parkplatz', 'parkplätz', 'parkhaus', 'parkhäus', 'tiefgarage', '=parken', 'parking', 'car park', 'garage'], filters: [{ amenity: 'parking' }] },
+  { label: 'Fahrradständer', en: 'Bike parking', kw: ['fahrradständer', 'radständer', 'fahrradparkpl', 'fahrradabstell', 'bike parking', 'bicycle parking', 'bike rack'], filters: [{ amenity: 'bicycle_parking' }] },
+  { label: 'Fahrradverleih', en: 'Bike rental', kw: ['fahrradverleih', 'radverleih', 'leihrad', 'leihräder', 'bike rental', 'bicycle rental', 'bike hire', 'bike share'], filters: [{ amenity: 'bicycle_rental' }] },
+  { label: 'Carsharing', en: 'Car sharing', kw: ['carsharing', 'car sharing'], filters: [{ amenity: 'car_sharing' }] },
+  { label: 'Taxistand', en: 'Taxi stand', kw: ['taxi'], filters: [{ amenity: 'taxi' }] },
+  { label: 'Haltestelle', en: 'Public transport stop', kw: ['haltestelle', 'bushalte', '=bus', 'öpnv', '=tram', 'straßenbahn', 'bus stop', 'bus station', 'tram stop', 'public transport', '=transit', '=stop'], filters: [{ highway: 'bus_stop' }, { railway: 'station' }, { railway: 'halt' }, { railway: 'tram_stop' }] },
+  { label: 'Bahnhof', en: 'Train station', kw: ['bahnhof', 'bahnhöf', '=bahn', '=zug', 's bahn', 'sbahn', 'train station', 'railway station', '=train', '=rail'], filters: [{ railway: 'station' }, { railway: 'halt' }] },
+  { label: 'Park', en: 'Park', kw: ['=park', '=parks', 'grünanlage', 'stadtpark'], filters: [{ leisure: 'park' }] },
+  { label: 'Hundewiese', en: 'Dog park', kw: ['hundewiese', 'hundepark', 'hundeauslauf', 'dog park', 'dog run'], filters: [{ leisure: 'dog_park' }] },
+  { label: 'Toilette', en: 'Toilet', kw: ['toilette', '=wc', '=wcs', '=klo', '=klos', 'toilet', 'restroom', 'bathroom', '=loo'], filters: [{ amenity: 'toilets' }] },
+  { label: 'Wickeltisch', en: 'Baby changing table', kw: ['wickel', 'changing table', 'baby changing'], filters: [{ changing_table: 'yes' }] },
+  { label: 'Trinkwasser', en: 'Drinking water', kw: ['trinkwasser', 'trinkbrunnen', 'drinking water', 'water fountain'], filters: [{ amenity: 'drinking_water' }] },
+  { label: 'Apotheke', en: 'Pharmacy', kw: ['apotheke', 'pharmacy', 'pharmacies'], filters: [{ amenity: 'pharmacy' }] },
+  { label: 'Arzt', en: 'Doctor', kw: ['arzt', 'ärzt', 'hausarzt', 'hausärzt', 'arztpraxis', 'doctor', 'physician', '=gp', 'clinic'], filters: [{ amenity: 'doctors' }] },
+  { label: 'Zahnarzt', en: 'Dentist', kw: ['zahnarzt', 'zahnärzt', 'dentist'], filters: [{ amenity: 'dentist' }] },
+  { label: 'Krankenhaus', en: 'Hospital', kw: ['krankenhaus', 'krankenhäus', 'klinik', 'hospital'], filters: [{ amenity: 'hospital' }] },
+  { label: 'Geldautomat', en: 'ATM', kw: ['geldautomat', 'bankautomat', '=atm', '=atms', 'cash machine', 'cashpoint'], filters: [{ amenity: 'atm' }, { amenity: 'bank', atm: 'yes' }] },
+  { label: 'Bank', en: 'Bank', kw: ['=bank', '=banken', 'sparkasse', '=banks'], filters: [{ amenity: 'bank' }] },
+  { label: 'Post', en: 'Post office', kw: ['=post', 'postfiliale', 'postamt', 'post office'], filters: [{ amenity: 'post_office' }] },
+  { label: 'Briefkasten', en: 'Post box', kw: ['briefkasten', 'briefkästen', 'post box', 'postbox', 'mailbox'], filters: [{ amenity: 'post_box' }] },
+  { label: 'Paketstation', en: 'Parcel locker', kw: ['paketstation', 'packstation', 'paketbox', 'parcel locker', 'parcel'], filters: [{ amenity: 'parcel_locker' }] },
+  { label: 'Tankstelle', en: 'Petrol station', kw: ['tankstelle', '=tanken', 'petrol', 'gas station', 'fuel'], filters: [{ amenity: 'fuel' }] },
+  { label: 'Schwimmbad', en: 'Swimming pool', kw: ['schwimmbad', 'schwimmbäd', 'freibad', 'freibäd', 'hallenbad', 'hallenbäd', 'badestelle', 'badesee', 'swimming', 'swimming pool', '=pool', 'lido'], filters: [{ leisure: 'swimming_pool', access: 'yes' }, { leisure: 'water_park' }, { leisure: 'bathing_place' }, { leisure: 'swimming_area' }, { leisure: 'sports_centre', sport: { re: 'swimming' } }] },
+  { label: 'Fitnessstudio', en: 'Gym', kw: ['fitness', '=gym', '=gyms'], filters: [{ leisure: 'fitness_centre' }] },
+  { label: 'Sportplatz', en: 'Sports pitch', kw: ['sportplatz', 'sportplätz', 'fußballpl', 'bolzpl', 'sports pitch', 'pitch', 'football field', 'soccer field'], filters: [{ leisure: 'pitch' }] },
+  { label: 'Kindergarten', en: 'Kindergarten', kw: ['kindergarten', 'kindergärten', '=kita', '=kitas', 'krippe', 'nursery', 'daycare', 'preschool'], filters: [{ amenity: 'kindergarten' }] },
+  { label: 'Schule', en: 'School', kw: ['schule', 'grundschule', 'gymnasium', 'gymnasien', 'school'], filters: [{ amenity: 'school' }] },
+  { label: 'Bibliothek', en: 'Library', kw: ['bibliothek', 'bücherei', 'library', 'libraries'], filters: [{ amenity: 'library' }] },
+  { label: 'Kino', en: 'Cinema', kw: ['kino', 'cinema', 'movie theater', 'movies'], filters: [{ amenity: 'cinema' }] },
+  { label: 'Museum', en: 'Museum', kw: ['museum', 'museen'], filters: [{ tourism: 'museum' }] },
+  { label: 'Kirche', en: 'Church', kw: ['kirche', 'church', 'place of worship'], filters: [{ amenity: 'place_of_worship' }] },
+  { label: 'Polizei', en: 'Police', kw: ['polizei', 'police', 'police station'], filters: [{ amenity: 'police' }] },
 ];
 
 const CUISINES = [
-  { kw: ['italien'], re: 'italian|pizza|pasta' },
+  { kw: ['italien', 'italian'], re: 'italian|pizza|pasta' },
   { kw: ['pizz'], re: 'pizza|italian' },
   { kw: ['sushi'], re: 'sushi' },
   { kw: ['japan', 'ramen'], re: 'japanese|sushi|ramen' },
   { kw: ['chines'], re: 'chinese' },
-  { kw: ['asiat'], re: 'asian|chinese|vietnamese|thai|japanese|korean' },
+  { kw: ['asiat', 'asian'], re: 'asian|chinese|vietnamese|thai|japanese|korean' },
   { kw: ['thai'], re: 'thai' },
   { kw: ['vietnam'], re: 'vietnamese' },
   { kw: ['korea'], re: 'korean' },
-  { kw: ['indisch', '=inder'], re: 'indian' },
-  { kw: ['griech'], re: 'greek' },
-  { kw: ['türk'], re: 'turkish|kebab' },
+  { kw: ['indisch', '=inder', 'indian'], re: 'indian' },
+  { kw: ['griech', 'greek'], re: 'greek' },
+  { kw: ['türk', 'turkish'], re: 'turkish|kebab' },
   { kw: ['döner', 'kebab', 'kebap'], re: 'kebab' },
   { kw: ['burger'], re: 'burger' },
-  { kw: ['bayerisch', 'bayrisch'], re: 'bavarian' },
-  { kw: ['deutsch', 'gutbürgerlich'], re: 'german|bavarian|regional' },
-  { kw: ['mexikan'], re: 'mexican' },
-  { kw: ['spanisch', 'tapas'], re: 'spanish|tapas' },
-  { kw: ['französ'], re: 'french' },
+  { kw: ['bayerisch', 'bayrisch', 'bavarian'], re: 'bavarian' },
+  { kw: ['deutsch', 'gutbürgerlich', 'german'], re: 'german|bavarian|regional' },
+  { kw: ['mexikan', 'mexican'], re: 'mexican' },
+  { kw: ['spanisch', 'tapas', 'spanish'], re: 'spanish|tapas' },
+  { kw: ['französ', 'french'], re: 'french' },
   { kw: ['steak'], re: 'steak' },
-  { kw: ['fisch'], re: 'fish|seafood' },
-  { kw: ['kroat', 'balkan'], re: 'croatian|balkan' },
+  { kw: ['fisch', 'fish', 'seafood'], re: 'fish|seafood' },
+  { kw: ['kroat', 'balkan', 'croatian'], re: 'croatian|balkan' },
 ];
 const FOOD_FILTERS = [{ amenity: 'restaurant' }, { amenity: 'fast_food' }, { amenity: 'cafe' }];
 // Für unbekannte Begriffe: Text im Namen, in der Marke oder im Tag-Wert suchen – aber nur
@@ -2059,7 +2064,7 @@ function haversine(a, b) {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
-const fmtDist = m => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`);
+const fmtDist = m => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1).replace('.', t(',', '.'))} km`);
 const fmtRadius = m => (m < 1000 ? `${m} m` : `${m / 1000} km`);
 
 function matches(tags, cat) {
@@ -2080,7 +2085,7 @@ const map = L.map('map').setView([49.5, 11], 6); // bis der Standort da ist: Üb
 const osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
   className: 'osm-tiles', // per CSS abgedunkelt
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende',
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' + t('-Mitwirkende', ' contributors'),
 }).addTo(map);
 
 // ---------- Google Maps als Kartendienst (optional, eigener API-Schlüssel) ----------
@@ -2139,13 +2144,13 @@ darkQuery.addEventListener?.('change', () => {
 function useGoogle() {
   googleLayers = {
     'Google Maps': L.gridLayer.googleMutant({ type: 'roadmap', maxZoom: 21, styles: gmStyles() }),
-    'Google Satellit': L.gridLayer.googleMutant({ type: 'hybrid', maxZoom: 21 }),
+    [t('Google Satellit', 'Google Satellite')]: L.gridLayer.googleMutant({ type: 'hybrid', maxZoom: 21 }),
   };
   map.removeLayer(osmLayer);
   googleLayers['Google Maps'].addTo(map);
   layerControl = L.control.layers({ ...googleLayers, OpenStreetMap: osmLayer }, null, { position: 'topright' }).addTo(map);
   $('#mapProvider').textContent = 'Google Maps';
-  gmMessage('Google Maps ist aktiv. Oben rechts in der Karte kannst du umschalten.');
+  gmMessage(t('Google Maps ist aktiv. Oben rechts in der Karte kannst du umschalten.', 'Google Maps is active. You can switch layers at the top right of the map.'));
 }
 
 function loadGoogle(key) {
@@ -2156,25 +2161,25 @@ function loadGoogle(key) {
     return;
   }
   gmLoading = true;
-  gmMessage('Lade Google Maps …');
+  gmMessage(t('Lade Google Maps …', 'Loading Google Maps …'));
   window.gm_authFailure = () => {
     useOsm();
     if (key !== storedKey()) return; // Kartenschlüssel vom Backend: still bei OpenStreetMap bleiben
-    gmMessage('Google hat den Schlüssel abgelehnt. Ist die „Maps JavaScript API“ aktiviert, die Abrechnung eingerichtet und http://localhost:5173 als Website erlaubt?', true);
+    gmMessage(t('Google hat den Schlüssel abgelehnt. Ist die „Maps JavaScript API“ aktiviert, die Abrechnung eingerichtet und die Website erlaubt?', 'Google rejected the key. Is the Maps JavaScript API enabled, billing set up and this website allowed?'), true);
     $('#mapSettings').open = true;
   };
   window.__bettermapsGmReady = () => { gmLoading = false; useGoogle(); };
   const s = el('script', {
-    src: 'https://maps.googleapis.com/maps/api/js?loading=async&language=de&region=DE&callback=__bettermapsGmReady&key=' + encodeURIComponent(key),
+    src: 'https://maps.googleapis.com/maps/api/js?loading=async&language=' + t('de', 'en') + '&region=DE&callback=__bettermapsGmReady&key=' + encodeURIComponent(key),
     async: true,
-    onerror: () => { gmLoading = false; gmMessage('Google Maps konnte nicht geladen werden (Netzwerk?).', true); },
+    onerror: () => { gmLoading = false; gmMessage(t('Google Maps konnte nicht geladen werden (Netzwerk?).', 'Google Maps could not be loaded (network?).'), true); },
   });
   document.head.append(s);
 }
 
 $('#gmSave').onclick = () => {
   const key = $('#gmKey').value.trim();
-  if (!key) return gmMessage('Bitte zuerst einen Schlüssel eintragen.', true);
+  if (!key) return gmMessage(t('Bitte zuerst einen Schlüssel eintragen.', 'Please enter a key first.'), true);
   try { localStorage.setItem(GM_KEY_STORE, key); } catch { /* privater Modus: gilt nur für diese Sitzung */ }
   loadGoogle(key);
   renderSourceToggle();
@@ -2183,7 +2188,7 @@ $('#gmClear').onclick = () => {
   try { localStorage.removeItem(GM_KEY_STORE); } catch { /* egal */ }
   $('#gmKey').value = '';
   useOsm();
-  gmMessage('Schlüssel entfernt – es wird wieder OpenStreetMap angezeigt.');
+  gmMessage(t('Schlüssel entfernt – es wird wieder OpenStreetMap angezeigt.', 'Key removed – showing OpenStreetMap again.'));
   renderSourceToggle();
 };
 
@@ -2240,29 +2245,31 @@ function renderAccount() {
   const inn = !!session;
   $('#acctOut').hidden = inn;
   $('#acctIn').hidden = !inn;
-  if (!inn) { $('#acctState').textContent = storedKey() ? 'eigener Schlüssel' : 'nicht angemeldet'; return; }
+  if (!inn) { $('#acctState').textContent = storedKey() ? t('eigener Schlüssel', 'own key') : t('nicht angemeldet', 'not signed in'); return; }
   const email = session.user?.email || '';
   if (account && account.status && account.status !== 'approved') {
     const pending = account.status === 'pending';
-    $('#acctState').textContent = pending ? 'wartet auf Freischaltung' : 'nicht freigeschaltet';
-    $('#acctInfo').textContent = `Angemeldet als ${email}. ` + (pending
-      ? 'Dein Konto wird gerade geprüft. Du bekommst eine E-Mail, sobald du suchen kannst.'
-      : 'Dein Konto wurde nicht freigeschaltet.');
+    $('#acctState').textContent = pending ? t('wartet auf Freischaltung', 'awaiting approval') : t('nicht freigeschaltet', 'not approved');
+    $('#acctInfo').textContent = t(`Angemeldet als ${email}. `, `Signed in as ${email}. `) + (pending
+      ? t('Dein Konto wird gerade geprüft. Du bekommst eine E-Mail, sobald du suchen kannst.', 'Your account is being reviewed. You will get an email as soon as you can search.')
+      : t('Dein Konto wurde nicht freigeschaltet.', 'Your account was not approved.'));
     return;
   }
-  $('#acctState').textContent = account ? `${account.plan === 'pro' ? 'Pro' : 'Kostenlos'} · ${account.used}/${account.limit} heute` : email;
-  $('#acctInfo').textContent = `Angemeldet als ${email}.` + (account
-    ? ` Tarif: ${account.plan === 'pro' ? 'Pro' : 'Kostenlos'}. Heute ${account.used} von ${account.limit} Google-Abfragen genutzt (eine Suche braucht meist 1 bis 3; Bedingungen wie Spielplatz oder Ladesäule kosten nichts, nur Freitext-Bedingungen zählen extra).`
+  const planName = account && ({ plus: 'Plus', pro: 'Pro' }[account.plan] || t('Kostenlos', 'Free'));
+  $('#acctState').textContent = account ? `${planName} · ${account.used}/${account.limit} ${t('im Monat', 'this month')}` : email;
+  $('#acctInfo').textContent = t(`Angemeldet als ${email}.`, `Signed in as ${email}.`) + (account
+    ? t(` Tarif: ${planName}. Diesen Monat ${account.used} von ${account.limit} Google-Abfragen genutzt (eine Suche braucht meist 1 bis 3; Bedingungen wie Spielplatz oder Ladesäule kosten nichts, nur Freitext-Bedingungen zählen extra). Mit OpenStreetMap suchst du immer unbegrenzt.`,
+      ` Plan: ${planName}. ${account.used} of ${account.limit} Google queries used this month (a search usually needs 1 to 3; conditions like playground or EV charger are free, only free-text conditions count extra). OpenStreetMap searches are always unlimited.`)
     : '');
 }
 
 async function api(path, body) {
   const { data } = await sb.auth.getSession(); // frischt abgelaufene Tokens selbst auf
   const token = data.session?.access_token;
-  if (!token) throw new Error('Bitte melde dich an (unten unter „Konto“).');
+  if (!token) throw new Error(t('Bitte melde dich an (unten unter „Konto“).', 'Please sign in (below under “Account”).'));
   const res = await fetch(API_URL + path, {
     method: body ? 'POST' : 'GET',
-    headers: { Authorization: 'Bearer ' + token, apikey: SB_KEY, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    headers: { Authorization: 'Bearer ' + token, apikey: SB_KEY, 'X-Lang': t('de', 'en'), ...(body ? { 'Content-Type': 'application/json' } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   const json = await res.json().catch(() => ({}));
@@ -2299,15 +2306,15 @@ if (sb) {
   });
   const hashErr = new URLSearchParams(location.hash.slice(1)).get('error_description');
   if (hashErr) {
-    acctMessage('Anmeldung fehlgeschlagen: ' + hashErr.replace(/\+/g, ' ') + '. Bitte neuen Link anfordern.', true);
+    acctMessage(t('Anmeldung fehlgeschlagen: ', 'Sign-in failed: ') + hashErr.replace(/\+/g, ' ') + t('. Bitte neuen Link anfordern.', '. Please request a new link.'), true);
     $('#account').open = true;
     history.replaceState(null, '', location.pathname + location.search);
   }
 } else {
-  acctMessage('Anmeldung nicht verfügbar (Bibliothek konnte nicht geladen werden).', true);
+  acctMessage(t('Anmeldung nicht verfügbar (Bibliothek konnte nicht geladen werden).', 'Sign-in unavailable (library could not be loaded).'), true);
 }
 renderAccount();
-if (location.protocol === 'file:') acctMessage('Anmelden geht nur in der Web-Version: https://nexttomaps.com/app/', true);
+if (location.protocol === 'file:') acctMessage(t('Anmelden geht nur in der Web-Version: https://nexttomaps.com/app/', 'Sign-in only works in the web version: https://nexttomaps.com/en/app/'), true);
 
 // Die Anmelde-E-Mail enthält Code und Link (eigener E-Mail-Versand in Supabase, Vorlage „Magic Link“).
 // Mit Code bleibt die Anmeldung in der Homescreen-App, statt in Safari zu landen.
@@ -2325,8 +2332,9 @@ try {
     $('#codeForm').hidden = false;
     $('#account').open = true;
     acctMessage(pending.waiting
-      ? `Dein Konto wird noch geprüft. Sobald es freigeschaltet ist, bekommst du den Anmeldecode per E-Mail an ${loginEmail} – gib ihn dann hier ein.`
-      : `Gib den Code aus der E-Mail an ${loginEmail} ein.`);
+      ? t(`Dein Konto wird noch geprüft. Sobald es freigeschaltet ist, bekommst du den Anmeldecode per E-Mail an ${loginEmail} – gib ihn dann hier ein.`,
+        `Your account is still being reviewed. Once approved, you will receive the sign-in code by email at ${loginEmail} – enter it here.`)
+      : t(`Gib den Code aus der E-Mail an ${loginEmail} ein.`, `Enter the code from the email sent to ${loginEmail}.`));
   }
 } catch { /* egal */ }
 $('#loginForm').addEventListener('submit', async e => {
@@ -2334,51 +2342,52 @@ $('#loginForm').addEventListener('submit', async e => {
   if (!sb) return;
   loginEmail = $('#email').value.trim();
   $('#sendLink').disabled = true;
-  acctMessage('Einen Moment …');
+  acctMessage(t('Einen Moment …', 'One moment …'));
   // Erst beim Backend nachfragen: Neue Konten warten auf Freischaltung, den Code gibt es erst danach.
   let check;
   try {
     const res = await fetch(API_URL + '/login', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SB_KEY },
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SB_KEY, 'X-Lang': t('de', 'en') },
       body: JSON.stringify({ email: loginEmail }),
     });
     check = { ok: res.ok, json: await res.json().catch(() => ({})) };
   } catch {
     $('#sendLink').disabled = false;
-    return acctMessage('Keine Verbindung zum Server. Bitte später noch einmal versuchen.', true);
+    return acctMessage(t('Keine Verbindung zum Server. Bitte später noch einmal versuchen.', 'No connection to the server. Please try again later.'), true);
   }
   if (!check.ok || check.json.status === 'rejected') {
     $('#sendLink').disabled = false;
-    return acctMessage(check.json.status === 'rejected' ? 'Dieses Konto wurde nicht freigeschaltet.'
-      : check.json.error || 'Anmeldung gerade nicht möglich.', true);
+    return acctMessage(check.json.status === 'rejected' ? t('Dieses Konto wurde nicht freigeschaltet.', 'This account was not approved.')
+      : check.json.error || t('Anmeldung gerade nicht möglich.', 'Sign-in is not possible right now.'), true);
   }
   if (check.json.status === 'pending') {
     $('#sendLink').disabled = false;
     $('#codeForm').hidden = false;
     try { localStorage.setItem(PENDING_KEY, JSON.stringify({ email: loginEmail, t: Date.now(), waiting: true })); } catch { /* egal */ }
-    return acctMessage(`Danke! Deine Anmeldung wird geprüft. Sobald dein Konto freigeschaltet ist, bekommst du den Anmeldecode per E-Mail an ${loginEmail} – gib ihn dann hier ein.`);
+    return acctMessage(t(`Danke! Deine Anmeldung wird geprüft. Sobald dein Konto freigeschaltet ist, bekommst du den Anmeldecode per E-Mail an ${loginEmail} – gib ihn dann hier ein.`,
+      `Thanks! Your sign-up is being reviewed. Once your account is approved, you will receive the sign-in code by email at ${loginEmail} – enter it here.`));
   }
-  acctMessage('Sende E-Mail …');
+  acctMessage(t('Sende E-Mail …', 'Sending email …'));
   const { error } = await sb.auth.signInWithOtp({
     email: loginEmail,
     options: { emailRedirectTo: location.origin + location.pathname, shouldCreateUser: false },
   });
   $('#sendLink').disabled = false;
   if (error) return acctMessage(/rate|seconds/i.test(error.message)
-    ? 'Bitte kurz warten, bevor du eine neue E-Mail anforderst.' : 'Fehler: ' + error.message, true);
+    ? t('Bitte kurz warten, bevor du eine neue E-Mail anforderst.', 'Please wait a moment before requesting another email.') : t('Fehler: ', 'Error: ') + error.message, true);
   $('#codeForm').hidden = !OTP_IN_EMAIL;
   try { localStorage.setItem(PENDING_KEY, JSON.stringify({ email: loginEmail, t: Date.now() })); } catch { /* egal */ }
   if (OTP_IN_EMAIL) $('#otp').focus();
   acctMessage(OTP_IN_EMAIL
-    ? `E-Mail an ${loginEmail} ist unterwegs. Gib den Code daraus hier ein – oder tippe auf den Link.`
-    : `E-Mail an ${loginEmail} ist unterwegs. Tippe auf den Link darin, um dich anzumelden.`);
+    ? t(`E-Mail an ${loginEmail} ist unterwegs. Gib den Code daraus hier ein – oder tippe auf den Link.`, `Email to ${loginEmail} is on its way. Enter the code here – or tap the link.`)
+    : t(`E-Mail an ${loginEmail} ist unterwegs. Tippe auf den Link darin, um dich anzumelden.`, `Email to ${loginEmail} is on its way. Tap the link in it to sign in.`));
 });
 $('#codeForm').addEventListener('submit', async e => {
   e.preventDefault();
   const token = $('#otp').value.replace(/\s/g, '');
   if (!token || !loginEmail) return;
   const { error } = await sb.auth.verifyOtp({ email: loginEmail, token, type: 'email' });
-  if (error) return acctMessage('Der Code passt nicht oder ist abgelaufen.', true);
+  if (error) return acctMessage(t('Der Code passt nicht oder ist abgelaufen.', 'The code is wrong or has expired.'), true);
   $('#codeForm').hidden = true;
   $('#otp').value = '';
   try { localStorage.removeItem(PENDING_KEY); } catch { /* egal */ }
@@ -2426,9 +2435,9 @@ $('#codeForm').addEventListener('submit', async e => {
 
 $('#logout').onclick = async () => {
   const { error } = await sb.auth.signOut({ scope: 'local' });
-  if (error) return acctMessage('Abmelden fehlgeschlagen: ' + error.message, true);
+  if (error) return acctMessage(t('Abmelden fehlgeschlagen: ', 'Sign-out failed: ') + error.message, true);
   account = null;
-  acctMessage('Abgemeldet.');
+  acctMessage(t('Abgemeldet.', 'Signed out.'));
 };
 
 // ---------- Datenquelle: eigener Google-Schlüssel, Backend (Konto) oder OpenStreetMap ----------
@@ -2465,11 +2474,11 @@ const G_MAX = 60;
 function googleError(json, status) {
   const msg = json?.error?.message || `HTTP ${status}`;
   const reason = JSON.stringify(json?.error?.details || '');
-  if (/SERVICE_DISABLED|has not been used|is disabled/i.test(msg + reason)) return 'Die „Places API (New)“ ist für deinen Google-Schlüssel nicht aktiviert (Google Cloud Console → APIs & Dienste)';
-  if (/API_KEY|API key/i.test(msg + reason)) return 'Google hat den API-Schlüssel abgelehnt';
-  if (/referer|referrer/i.test(msg)) return `Google erlaubt den Schlüssel nicht für ${location.host}`;
-  if (status === 429) return 'Google-Kontingent erschöpft';
-  return 'Google-Suche fehlgeschlagen: ' + msg;
+  if (/SERVICE_DISABLED|has not been used|is disabled/i.test(msg + reason)) return t('Die „Places API (New)“ ist für deinen Google-Schlüssel nicht aktiviert (Google Cloud Console → APIs & Dienste)', 'The Places API (New) is not enabled for your Google key (Google Cloud Console → APIs & Services)');
+  if (/API_KEY|API key/i.test(msg + reason)) return t('Google hat den API-Schlüssel abgelehnt', 'Google rejected the API key');
+  if (/referer|referrer/i.test(msg)) return t(`Google erlaubt den Schlüssel nicht für ${location.host}`, `Google does not allow the key for ${location.host}`);
+  if (status === 429) return t('Google-Kontingent erschöpft', 'Google quota exhausted');
+  return t('Google-Suche fehlgeschlagen: ', 'Google search failed: ') + msg;
 }
 
 function googlePoint(p) {
@@ -2495,19 +2504,19 @@ async function googleFetch(text, b, fields, pageToken) {
     if (activeSource === 'cloud') {
       ({ res, json } = await api('/search', { textQuery: text, rect: b, fields: fields === G_FIELDS_MAIN ? 'main' : 'near', pageToken }));
       if (json.quota && account) { account.used = json.quota.used; account.limit = json.quota.limit; renderAccount(); }
-      if (res.status === 401) throw new Error('Deine Anmeldung ist abgelaufen – bitte unten unter „Konto“ neu anmelden.');
+      if (res.status === 401) throw new Error(t('Deine Anmeldung ist abgelaufen – bitte unten unter „Konto“ neu anmelden.', 'Your session has expired – please sign in again below under “Account”.'));
       if (res.status === 403 && json.status) {
         if (account) { account.status = json.status; renderAccount(); }
         throw new Error(json.error);
       }
-      if (res.status === 429 && json.limit) {
+      if (res.status === 429 && (json.reason || json.limit != null)) {
         if (account) { account.used = json.used; account.limit = json.limit; renderAccount(); }
-        throw quotaError(`Dein Tageskontingent ist aufgebraucht (${json.used} von ${json.limit} Google-Abfragen). Morgen geht es weiter${json.plan === 'pro' ? '' : ' – oder mit dem Pro-Tarif mehr pro Tag'}.`);
+        throw json.reason === 'global' ? quotaError(json.error, 'global') : quotaError(quotaUsedUp(json.used, json.limit));
       }
       if (!res.ok && json.error && typeof json.error === 'string') throw new Error(json.error);
     } else {
       const body = {
-        textQuery: text, languageCode: 'de', regionCode: 'DE', pageSize: 20,
+        textQuery: text, languageCode: t('de', 'en'), regionCode: 'DE', pageSize: 20,
         locationRestriction: { rectangle: { low: { latitude: b.s, longitude: b.w }, high: { latitude: b.n, longitude: b.e } } },
         ...(pageToken ? { pageToken } : {}),
       };
@@ -2563,19 +2572,30 @@ async function googleTerm(text, b, fields, split) {
 }
 
 // Google-Kontingent im Konto erschöpft: dann wird OpenStreetMap als Ausweg angeboten.
-const quotaError = msg => Object.assign(new Error(msg), { quota: true });
+// kind: 'user' (Monatskontingent leer), 'global' (Tageslimit aller Nutzer), 'partial' (reicht nur für diese Suche nicht)
+const quotaError = (msg, kind = 'user') => Object.assign(new Error(msg), { quota: kind });
+const quotaUsedUp = (used, limit) => t(
+  `Dein Google-Kontingent für diesen Monat ist aufgebraucht (${used} von ${limit} Abfragen). Am Monatsersten geht es wieder los – mit OpenStreetMap kannst du sofort unbegrenzt weitersuchen.`,
+  `Your Google quota for this month is used up (${used} of ${limit} queries). It renews on the 1st – you can keep searching with OpenStreetMap right away, unlimited.`);
 // Wer einmal auf OpenStreetMap ausgewichen ist, bleibt dabei, bis das Kontingent wieder frei ist
-// (das Backend zählt pro Tag nach deutscher Zeit, also bis Mitternacht in Berlin).
+// (das Backend zählt pro Kalendermonat nach deutscher Zeit).
 const OSM_DAY = 'bettermaps.osmDay';
+const berlinMonth = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Berlin' }).slice(0, 7);
 const berlinDay = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Berlin' });
+// Liefert 'user' oder 'global', solange die gemerkte Ausweichsuche gilt, sonst ''.
 function osmFallback() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(OSM_DAY)); } catch { /* egal */ }
-  if (saved?.day !== berlinDay()) return false;
-  return !account || account.limit <= saved.limit; // höheres Limit (z. B. Pro): wieder Google
+  if (saved?.kind === 'global') return saved.day === berlinDay() ? 'global' : '';
+  if (saved?.month !== berlinMonth()) return '';
+  return !account || account.limit <= saved.limit ? 'user' : ''; // höheres Limit (z. B. Plus/Pro): wieder Google
 }
-function rememberOsmFallback() {
-  try { localStorage.setItem(OSM_DAY, JSON.stringify({ day: berlinDay(), limit: account?.limit ?? 0 })); } catch { /* egal */ }
+// Nur „Monatskontingent leer“ gilt bis Monatsende, „alle Nutzer am Limit“ bis Mitternacht;
+// reicht das Kontingent nur für eine einzelne Suche nicht, wird nichts gemerkt.
+function rememberOsmFallback(kind) {
+  const v = kind === 'user' ? { kind, month: berlinMonth(), limit: account?.limit ?? 0 }
+    : kind === 'global' ? { kind, day: berlinDay() } : null;
+  try { if (v) localStorage.setItem(OSM_DAY, JSON.stringify(v)); } catch { /* egal */ }
 }
 
 let activeSource = 'none'; // für die laufende Suche festgelegt (siehe runSearch)
@@ -2583,8 +2603,9 @@ let activeSource = 'none'; // für die laufende Suche festgelegt (siehe runSearc
 // Bedingungen mit bekannter Kategorie kommen aus der eigenen OSM-Datenbank im Backend
 // (schnell, kostet keine Google-Abfrage); Freitext-Bedingungen gehen an Google.
 // Liefert null, wenn die Datenbank das Gebiet nicht abdeckt oder nicht erreichbar ist.
-const cappedNote = labels => (labels.length
-  ? `Sehr viele Orte bei ${labels.map(l => `„${l}“`).join(', ')} – evtl. fehlen Treffer. Bitte kleineren Bereich wählen.` : '');
+const cappedNote = keys => { const labels = keys.map(k => catName(CATEGORIES.find(c => c.label === k) || { label: k })); return labels.length
+  ? t(`Sehr viele Orte bei ${labels.map(l => `„${l}“`).join(', ')} – evtl. fehlen Treffer. Bitte kleineren Bereich wählen.`,
+    `A lot of places for ${labels.map(l => `“${l}”`).join(', ')} – some results may be missing. Please choose a smaller area.`) : ''; };
 
 // Punkt aus der POI-Datenbank; die ID aus den Koordinaten erkennt dasselbe Objekt in Hauptsuche und Bedingung.
 const dbPoint = ([lat, lon, name]) => ({ id: `db/${lat},${lon}`, lat, lon, tags: { name } });
@@ -2618,15 +2639,16 @@ const overlaps = (a, b) => { const s = new Set(tagPairs(a)); return tagPairs(b).
 async function googleData(mainCat, conds, bbox) {
   const viaDb = conds.map(c => !!(c.cat && session && !overlaps(c, mainCat))); // einmal festlegen
   const gConds = conds.filter((c, i) => !viaDb[i]);
-  // Über das Backend: Vierteln (bis zu 12 Abfragen je Bedingung) nur, wenn das Tageskontingent reicht.
+  // Über das Backend: Vierteln (bis zu 12 Abfragen je Bedingung) nur, wenn das Monatskontingent reicht.
   const checkQuota = n => {
     if (activeSource !== 'cloud' || !account) return true;
     const left = account.limit - account.used;
     if (left < 1) {
-      throw quotaError(`Dein Tageskontingent ist aufgebraucht (${account.used} von ${account.limit} Google-Abfragen). Morgen geht es weiter.`);
+      throw quotaError(quotaUsedUp(account.used, account.limit));
     }
     if (left < 1 + n) {
-      throw quotaError(`Dein Tageskontingent reicht für diese Suche nicht mehr: noch ${left} von ${account.limit} Google-Abfragen frei, gebraucht werden mindestens ${1 + n}. Mit weniger Freitext-Bedingungen klappt es evtl. noch.`);
+      throw quotaError(t(`Dein Google-Kontingent reicht für diese Suche nicht mehr: noch ${left} von ${account.limit} Abfragen in diesem Monat frei, gebraucht werden mindestens ${1 + n}. Mit weniger Freitext-Bedingungen klappt es evtl. noch.`,
+        `Your Google quota is not enough for this search: ${left} of ${account.limit} queries left this month, at least ${1 + n} needed. It may work with fewer free-text conditions.`), 'partial');
     }
     return left >= 3 * (1 + n) + 12 * n;
   };
@@ -2649,7 +2671,8 @@ async function googleData(mainCat, conds, bbox) {
   const capped = [[m, mainCat], ...gs.map((g, i) => [g, gConds[i]]), ...extra.map((g, i) => [g, dbConds[i]])]
     .filter(([r]) => r.capped).map(([, c]) => c.label);
   const note = [capped.length
-    ? `Google liefert pro Suchbegriff höchstens ${G_MAX} Orte – bei ${capped.map(l => `„${l}“`).join(', ')} fehlen evtl. welche. Vollständiger, aber langsamer: OpenStreetMap.`
+    ? t(`Google liefert pro Suchbegriff höchstens ${G_MAX} Orte – bei ${capped.map(l => `„${l}“`).join(', ')} fehlen evtl. welche. Vollständiger, aber langsamer: OpenStreetMap.`,
+      `Google returns at most ${G_MAX} places per search term – some may be missing for ${capped.map(l => `“${l}”`).join(', ')}. More complete but slower: OpenStreetMap.`)
     : '', cappedNote(dbCapped)].filter(Boolean).join(' ');
   return { mains: m.points, pools, note };
 }
@@ -2659,7 +2682,7 @@ async function overpassPoints(mainCat, conds, bbox) {
   const ck = 'o' + hashKey(query);
   let elements = cacheGet(ck);
   if (!elements) {
-    setLoading('Lade OpenStreetMap-Daten … (kann bei ausgelasteten Servern bis zu einer Minute dauern)');
+    setLoading(t('Lade OpenStreetMap-Daten … (kann bei ausgelasteten Servern bis zu einer Minute dauern)', 'Loading OpenStreetMap data … (may take up to a minute when servers are busy)'));
     elements = await overpass(query);
     cachePut(ck, elements);
   }
@@ -2690,7 +2713,7 @@ async function osmData(mainCat, conds, bbox) {
   // Erst das Backend (schnell): deckt es das Gebiet nicht ab, gleich alles von den öffentlichen Servern.
   let area = null;
   if (mainCat.cat) {
-    setLoading('Suche …');
+    setLoading(t('Suche …', 'Searching …'));
     try {
       const { res, json } = await api('/area', { cat: mainCat.cat, rect: bbox });
       if (res.ok && json.covered) area = json;
@@ -2708,7 +2731,7 @@ async function osmData(mainCat, conds, bbox) {
     return { mains, pools: conds.map(c => (c.cat ? rest : points).filter(p => matches(p.tags, c) && isPublic(p))), note: '' };
   }
   const pools = conds.map(c => (c.cat ? db.shift() : points.filter(p => matches(p.tags, c) && isPublic(p))));
-  const note = [area?.capped ? `Sehr viele Treffer – angezeigt werden die ersten ${area.points.length}. Bitte kleineren Bereich wählen.` : '',
+  const note = [area?.capped ? t(`Sehr viele Treffer – angezeigt werden die ersten ${area.points.length}. Bitte kleineren Bereich wählen.`, `Lots of results – showing the first ${area.points.length}. Please choose a smaller area.`) : '',
     cappedNote(db.capped)].filter(Boolean).join(' ');
   return { mains, pools, note };
 }
@@ -2727,11 +2750,11 @@ let conditions = [{ text: '', radius: 500 }]; // leer starten, leere Bedingungen
 function categoryMatches(text, extras = []) {
   const all = [...CATEGORIES, ...extras.map(label => ({ label, kw: [] }))];
   const q = text.trim().toLowerCase();
-  if (!q) return all.map(c => c.label);
-  const hits = all.filter(c => c.label.toLowerCase().includes(q) ||
+  if (!q) return all.map(catName);
+  const hits = all.filter(c => catName(c).toLowerCase().includes(q) ||
     c.kw.some(k => k.replace('=', '').startsWith(q)));
-  const starts = c => (c.label.toLowerCase().startsWith(q) ? 0 : 1);
-  return hits.sort((a, b) => starts(a) - starts(b)).map(c => c.label);
+  const starts = c => (catName(c).toLowerCase().startsWith(q) ? 0 : 1);
+  return hits.sort((a, b) => starts(a) - starts(b)).map(catName);
 }
 
 function attachPicker(input, onPick, extras = []) {
@@ -2799,9 +2822,9 @@ function renderConditions() {
   const box = $('#conds');
   box.replaceChildren();
   conditions.forEach((c, i) => {
-    const what = el('input', { value: c.text, placeholder: 'z. B. Spielplatz, Bäckerei, dm …', autocomplete: 'off' });
+    const what = el('input', { value: c.text, placeholder: t('z. B. Spielplatz, Bäckerei, dm …', 'e.g. playground, bakery, Starbucks …'), autocomplete: 'off' });
     what.oninput = () => { c.text = what.value; };
-    const radius = el('select', { title: 'Maximale Entfernung' });
+    const radius = el('select', { title: t('Maximale Entfernung', 'Maximum distance') });
     for (const r of RADII) radius.append(el('option', { value: r, textContent: `≤ ${fmtRadius(r)}` }));
     radius.value = c.radius;
     radius.onchange = () => { c.radius = Number(radius.value); };
@@ -2809,12 +2832,12 @@ function renderConditions() {
       el('span', { className: 'dot', style: { background: COLORS[i % COLORS.length] } }),
       attachPicker(what, label => { c.text = label; }),
       radius,
-      el('button', { type: 'button', className: 'rm ghost', textContent: '✕', title: 'Bedingung entfernen',
+      el('button', { type: 'button', className: 'rm ghost', textContent: '✕', title: t('Bedingung entfernen', 'Remove condition'),
         onclick: () => { conditions.splice(i, 1); renderConditions(); } }),
     ));
   });
   if (!conditions.length) {
-    box.append(el('div', { className: 'r-sub', textContent: 'Keine Bedingungen – es werden alle Treffer gezeigt.', style: { marginBottom: '6px' } }));
+    box.append(el('div', { className: 'r-sub', textContent: t('Keine Bedingungen – es werden alle Treffer gezeigt.', 'No conditions – all results are shown.'), style: { marginBottom: '6px' } }));
   }
 }
 
@@ -2825,7 +2848,7 @@ $('#addCond').onclick = () => {
 };
 renderConditions();
 // „Was?“: dieselbe Liste, dazu ein paar beliebte Küchen
-attachPicker($('#main'), () => {}, ['Italienisches Restaurant', 'Pizza', 'Sushi', 'Burger']);
+attachPicker($('#main'), () => {}, t(['Italienisches Restaurant', 'Pizza', 'Sushi', 'Burger'], ['Italian restaurant', 'Pizza', 'Sushi', 'Burger']));
 
 function setStatus(content, isError = false) {
   const s = $('#status');
@@ -2836,7 +2859,7 @@ function setStatus(content, isError = false) {
 function setBusy(busy) {
   $('#go').disabled = busy;
   $('#searchView').disabled = busy;
-  $('#go').textContent = busy ? 'Suche läuft …' : 'Suchen';
+  $('#go').textContent = busy ? t('Suche läuft …', 'Searching …') : t('Suchen', 'Search');
   document.body.classList.toggle('loading', busy); // Fortschrittsbalken
 }
 
@@ -2851,11 +2874,11 @@ function showSkeleton() {
 
 // ---------- Datenquellen ----------
 async function geocode(q) {
-  const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=de&polygon_geojson=1&polygon_threshold=0.0003&q=' + encodeURIComponent(q);
+  const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&accept-language=' + t('de', 'en') + '&polygon_geojson=1&polygon_threshold=0.0003&q=' + encodeURIComponent(q);
   const res = await fetch(url);
-  if (!res.ok) throw new Error('Die Ortssuche ist gerade nicht erreichbar.');
+  if (!res.ok) throw new Error(t('Die Ortssuche ist gerade nicht erreichbar.', 'Place search is currently unavailable.'));
   const data = await res.json();
-  if (!data.length) throw new Error(`Den Ort „${q}“ habe ich nicht gefunden.`);
+  if (!data.length) throw new Error(t(`Den Ort „${q}“ habe ich nicht gefunden.`, `Couldn’t find the place “${q}”.`));
   const [s, n, w, e] = data[0].boundingbox.map(Number);
   // Hat der Ort eine echte Grenze, filtern wir die Treffer später exakt darauf
   // (im Browser – so funktioniert die Abfrage auf jedem Overpass-Server und bleibt schnell).
@@ -2926,10 +2949,10 @@ function overpass(query) {
         })
         .catch(err => {
           if (done) return;
-          lastErr = err.name === 'AbortError' ? new Error('Zeitüberschreitung') : err;
+          lastErr = err.name === 'AbortError' ? new Error(t('Zeitüberschreitung', 'timeout')) : err;
           pending--;
           if (next < OVERPASS.length) start();
-          else if (!pending) finish(reject, new Error('Die OpenStreetMap-Datenserver sind gerade nicht erreichbar oder überlastet (' + lastErr.message + '). Bitte gleich nochmal versuchen oder einen kleineren Bereich wählen.'));
+          else if (!pending) finish(reject, new Error(t('Die OpenStreetMap-Datenserver sind gerade nicht erreichbar oder überlastet (', 'The OpenStreetMap data servers are unavailable or overloaded right now (') + lastErr.message + t('). Bitte gleich nochmal versuchen oder einen kleineren Bereich wählen.', '). Please try again shortly or choose a smaller area.')));
         })
         .finally(() => clearTimeout(kill));
       timer = setTimeout(start, STAGGER_MS);
@@ -2946,7 +2969,7 @@ function collapseForm(summary) {
   if (!narrow.matches) return;
   $('#form').hidden = true;
   const b = $('#editSearch');
-  b.replaceChildren(el('span', { className: 'what', textContent: summary }), el('span', { className: 'edit', textContent: 'Ändern' }));
+  b.replaceChildren(el('span', { className: 'what', textContent: summary }), el('span', { className: 'edit', textContent: t('Ändern', 'Edit') }));
   b.hidden = false;
   map.invalidateSize();
 }
@@ -3102,13 +3125,14 @@ const NEAR_ME_M = 2000; // Suchradius „Um mich herum“
 
 function locate() {
   return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) return reject(new Error('Dein Browser kann den Standort nicht bestimmen.'));
+    if (!navigator.geolocation) return reject(new Error(t('Dein Browser kann den Standort nicht bestimmen.', 'Your browser cannot determine your location.')));
     navigator.geolocation.getCurrentPosition(
       pos => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude, acc: pos.coords.accuracy }),
       err => reject(new Error(
-        err.code === 1 ? 'Standortfreigabe abgelehnt. Auf dem iPhone: Einstellungen → Datenschutz → Ortungsdienste → Safari-Websites (bzw. NextToMaps) erlauben.'
-        : err.code === 3 ? 'Der Standort konnte nicht rechtzeitig bestimmt werden. Bitte nochmal versuchen.'
-        : 'Der Standort ist gerade nicht verfügbar.')),
+        err.code === 1 ? t('Standortfreigabe abgelehnt. Auf dem iPhone: Einstellungen → Datenschutz → Ortungsdienste → Safari-Websites (bzw. NextToMaps) erlauben.',
+          'Location access denied. On iPhone: Settings → Privacy → Location Services → allow Safari Websites (or NextToMaps).')
+        : err.code === 3 ? t('Der Standort konnte nicht rechtzeitig bestimmt werden. Bitte nochmal versuchen.', 'Your location could not be determined in time. Please try again.')
+        : t('Der Standort ist gerade nicht verfügbar.', 'Your location is currently unavailable.'))),
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
   });
 }
@@ -3120,7 +3144,7 @@ function showMe(me) {
     L.circle([me.lat, me.lon], { radius: me.acc, color: '#4285f4', weight: 0, fillOpacity: 0.15, interactive: false }).addTo(meLayer);
   }
   L.circleMarker([me.lat, me.lon], { radius: 8, color: '#fff', weight: 2.5, fillColor: '#4285f4', fillOpacity: 1 })
-    .bindTooltip('Du bist hier').addTo(meLayer);
+    .bindTooltip(t('Du bist hier', 'You are here')).addTo(meLayer);
 }
 
 // Beim Start die Karte auf den eigenen Standort legen (ohne Fehlermeldung, falls nicht erlaubt).
@@ -3131,7 +3155,7 @@ locate().then(me => {
 }).catch(() => { /* bleibt beim Überblick */ });
 
 // „Um mich herum“ und ähnliche Eingaben im Wo?-Feld bedeuten: eigener Standort
-const isNearMe = text => /^(um mich( herum)?|in meiner n(ä|ae)he|meine? (n(ä|ae)he|standort)|aktueller standort|hier)$/i.test(text.trim());
+const isNearMe = text => /^(um mich( herum)?|in meiner n(ä|ae)he|meine? (n(ä|ae)he|standort)|aktueller standort|hier|around me|near me|nearby|my location|current location|here)$/i.test(text.trim());
 
 // Dasselbe OSM-Objekt aus zwei Quellen (Datenbank „db/…“ und öffentliche Server „node/…“) hat
 // verschiedene IDs: dann gleicher Name und fast gleiche Lage.
@@ -3141,77 +3165,82 @@ function sameObject(a, b) {
   return nm(a.tags) === nm(b.tags) && haversine(a, b) < (nm(a.tags) ? 40 : 5);
 }
 
-async function runSearch(useMapView, { osm = false } = {}) {
+async function runSearch(useMapView, { osm = '' } = {}) {
   const nearMe = !useMapView && (isNearMe($('#place').value) || !$('#place').value.trim()); // leer = um mich herum
   setBusy(true);
   showSkeleton();
   try {
     if (dataSource() === 'none') {
       $('#account').open = true;
-      throw new Error('Bitte melde dich zuerst an – unten unter „Konto“, mit deiner E-Mail-Adresse.');
+      throw new Error(t('Bitte melde dich zuerst an – unten unter „Konto“, mit deiner E-Mail-Adresse.', 'Please sign in first – below under “Account”, with your email address.'));
     }
     if (dataSource() === 'cloud' && account?.status && account.status !== 'approved') await refreshAccount(); // evtl. inzwischen freigeschaltet
     if (dataSource() === 'cloud' && account?.status && account.status !== 'approved') {
       $('#account').open = true;
       throw new Error(account.status === 'pending'
-        ? 'Dein Konto wartet noch auf Freischaltung. Du bekommst eine E-Mail, sobald du suchen kannst.'
-        : 'Dein Konto wurde nicht freigeschaltet.');
+        ? t('Dein Konto wartet noch auf Freischaltung. Du bekommst eine E-Mail, sobald du suchen kannst.', 'Your account is still awaiting approval. You will get an email as soon as you can search.')
+        : t('Dein Konto wurde nicht freigeschaltet.', 'Your account was not approved.'));
     }
     const mainCat = resolve($('#main').value);
-    if (!mainCat) throw new Error('Bitte eingeben, was du suchst.');
+    if (!mainCat) throw new Error(t('Bitte eingeben, was du suchst.', 'Please enter what you are looking for.'));
     const conds = conditions.filter(c => c.text.trim()).map((c, i) => {
       const r = resolve(c.text);
-      if (!r) throw new Error(`Mit der Bedingung „${c.text.trim()}“ kann ich nichts anfangen.`);
+      if (!r) throw new Error(t(`Mit der Bedingung „${c.text.trim()}“ kann ich nichts anfangen.`, `I can’t do anything with the condition “${c.text.trim()}”.`));
       return { ...r, radius: c.radius, color: COLORS[conditions.indexOf(c) % COLORS.length] };
     });
 
     let bbox, where, polygons = null, me = null;
     if (nearMe) {
-      setLoading('Bestimme deinen Standort …');
+      setLoading(t('Bestimme deinen Standort …', 'Finding your location …'));
       me = await locate();
       showMe(me);
       bbox = expandBbox({ s: me.lat, n: me.lat, w: me.lon, e: me.lon }, NEAR_ME_M);
-      where = 'um dich herum';
+      where = t('um dich herum', 'around you');
       map.fitBounds([[bbox.s, bbox.w], [bbox.n, bbox.e]]);
     } else if (useMapView) {
       const b = map.getBounds();
       bbox = { s: b.getSouth(), n: b.getNorth(), w: b.getWest(), e: b.getEast() };
-      where = 'im Kartenausschnitt';
+      where = t('im Kartenausschnitt', 'in the map view');
     } else {
       meLayer.clearLayers();
       const place = $('#place').value.trim();
-      setLoading('Suche Ort …');
+      setLoading(t('Suche Ort …', 'Finding place …'));
       const g = await geocode(place);
       bbox = g.bbox;
       polygons = g.polygons;
-      where = 'in ' + g.name;
+      where = t('in ', 'in ') + g.name;
       map.fitBounds([[bbox.s, bbox.w], [bbox.n, bbox.e]]);
     }
 
     const diagKm = haversine({ lat: bbox.s, lon: bbox.w }, { lat: bbox.n, lon: bbox.e }) / 1000;
     if (diagKm > MAX_DIAGONAL_KM) {
-      throw new Error(`Der Bereich ist zu groß (${Math.round(diagKm)} km Diagonale, max. ${MAX_DIAGONAL_KM} km). Bitte einen kleineren Ort wählen oder näher heranzoomen.`);
+      throw new Error(t(`Der Bereich ist zu groß (${Math.round(diagKm)} km Diagonale, max. ${MAX_DIAGONAL_KM} km). Bitte einen kleineren Ort wählen oder näher heranzoomen.`, `The area is too large (${Math.round(diagKm)} km diagonal, max. ${MAX_DIAGONAL_KM} km). Please choose a smaller place or zoom in.`));
     }
 
     let data = null, note = '', source = dataSource();
-    if (source === 'cloud' && (osm || osmFallback())) {
-      if (osm) rememberOsmFallback();
+    const fallback = source === 'cloud' ? (osm || osmFallback()) : '';
+    if (fallback) {
+      if (osm) rememberOsmFallback(osm);
       source = 'osm';
-      note = 'Google-Kontingent für heute aufgebraucht – mit OpenStreetMap gesucht. Ab Mitternacht wieder mit Google.';
+      note = fallback === 'user'
+        ? t('Google-Kontingent für diesen Monat aufgebraucht – mit OpenStreetMap gesucht. Ab dem Monatsersten wieder mit Google.', 'Google quota for this month used up – searched with OpenStreetMap. Google is back on the 1st of next month.')
+        : fallback === 'global'
+          ? t('Google-Suche ist für heute ausgelastet – mit OpenStreetMap gesucht. Ab Mitternacht wieder mit Google.', 'Google search is at capacity for today – searched with OpenStreetMap. Google is back after midnight.')
+          : t('Mit OpenStreetMap gesucht.', 'Searched with OpenStreetMap.');
     }
     activeSource = source;
     if (source === 'cloud') {
-      setLoading('Suche bei Google …');
+      setLoading(t('Suche bei Google …', 'Searching Google …'));
       data = await googleData(mainCat, conds, bbox);
-      note = data.note.replace(/ Vollständiger, aber langsamer: OpenStreetMap\./, '');
+      note = data.note.replace(/ (Vollständiger, aber langsamer|More complete but slower): OpenStreetMap\./, '');
       source = 'google';
     } else if (source === 'google') {
-      setLoading('Suche bei Google …');
+      setLoading(t('Suche bei Google …', 'Searching Google …'));
       try {
         data = await googleData(mainCat, conds, bbox);
         note = data.note;
       } catch (err) {
-        note = `${err.message} – stattdessen mit OpenStreetMap gesucht.`;
+        note = err.message + t(' – stattdessen mit OpenStreetMap gesucht.', ' – searched with OpenStreetMap instead.');
         source = 'osm';
       }
     }
@@ -3256,8 +3285,8 @@ async function runSearch(useMapView, { osm = false } = {}) {
     $('#results').replaceChildren();
     expandForm();
     setStatus(err.quota
-      ? [err.message, ' ', el('button', { type: 'button', className: 'ghost osm-retry', textContent: 'Mit OpenStreetMap weitersuchen',
-          onclick: () => runSearch(useMapView, { osm: true }) })]
+      ? [err.message, ' ', el('button', { type: 'button', className: 'ghost osm-retry', textContent: t('Mit OpenStreetMap weitersuchen', 'Continue with OpenStreetMap'),
+          onclick: () => runSearch(useMapView, { osm: err.quota }) })]
       : err.message || String(err), true);
   } finally {
     setBusy(false);
@@ -3266,7 +3295,7 @@ async function runSearch(useMapView, { osm = false } = {}) {
 
 // ---------- Darstellung ----------
 function displayName(r) {
-  return r.tags.name || r.tags.brand || `${current.mainCat.label} (ohne Namen)`;
+  return r.tags.name || r.tags.brand || `${current.mainCat.label} ${t('(ohne Namen)', '(unnamed)')}`;
 }
 
 function address(tags) {
@@ -3276,34 +3305,34 @@ function address(tags) {
   return [street, city].filter(Boolean).join(', ');
 }
 
-const ratingText = t => (t.rating ? `★ ${t.rating.toFixed(1).replace('.', ',')}${t.ratings ? ` (${t.ratings})` : ''}` : '');
+const ratingText = g => (g.rating ? `★ ${g.rating.toFixed(1).replace('.', t(',', '.'))}${g.ratings ? ` (${g.ratings})` : ''}` : '');
 
 // Zusatzinfos, die unter dem ausgewählten Treffer in der Liste aufklappen
 function detailsContent(r) {
-  const t = r.tags;
+  const tg = r.tags;
   const box = el('div', { className: 'r-details' });
-  if (t.opening_hours) box.append(el('div', { textContent: '🕑 ' + t.opening_hours }));
-  if (t.openNow != null) box.append(el('div', { textContent: t.openNow ? '🕑 Jetzt geöffnet' : '🕑 Jetzt geschlossen' }));
+  if (tg.opening_hours) box.append(el('div', { textContent: '🕑 ' + tg.opening_hours }));
+  if (tg.openNow != null) box.append(el('div', { textContent: tg.openNow ? t('🕑 Jetzt geöffnet', '🕑 Open now') : t('🕑 Jetzt geschlossen', '🕑 Closed now') }));
   r.near.forEach((hits, i) => {
     const c = current.conds[i];
     const name = hits[0].p.tags?.name || hits[0].p.tags?.brand;
     box.append(el('div', {},
       el('span', { className: 'dot', style: { background: c.color, width: '9px', height: '9px', marginRight: '5px' } }),
-      `${c.label}: ${fmtDist(hits[0].d)}` + (name ? ` – ${name}` : '') + (hits.length > 1 ? ` (${hits.length} im Umkreis)` : '')));
+      `${c.label}: ${fmtDist(hits[0].d)}` + (name ? ` – ${name}` : '') + (hits.length > 1 ? t(` (${hits.length} im Umkreis)`, ` (${hits.length} nearby)`) : '')));
   });
-  const phone = t.phone || t['contact:phone'];
+  const phone = tg.phone || tg['contact:phone'];
   const links = el('div', { className: 'links' });
-  const gq = t.name ? `${t.name}, ${address(t) || `${r.lat},${r.lon}`}` : `${r.lat},${r.lon}`;
-  const gmaps = t.gmaps || 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(gq);
+  const gq = tg.name ? `${tg.name}, ${address(tg) || `${r.lat},${r.lon}`}` : `${r.lat},${r.lon}`;
+  const gmaps = tg.gmaps || 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(gq);
   links.append(el('a', { href: gmaps, target: '_blank', rel: 'noopener', textContent: 'Google Maps' }));
   // Route in Google Maps; ohne Startpunkt nimmt Google den aktuellen Standort.
   const route = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(`${r.lat},${r.lon}`)
     + (r.id.startsWith('g/') ? '&destination_place_id=' + encodeURIComponent(r.id.slice(2)) : '');
   links.append(el('a', { href: route, target: '_blank', rel: 'noopener', textContent: 'Route' }));
   if (!r.id.startsWith('g/')) links.append(el('a', { href: r.id.startsWith('db/') ? `https://www.openstreetmap.org/#map=19/${r.lat}/${r.lon}` : 'https://www.openstreetmap.org/' + r.id, target: '_blank', rel: 'noopener', textContent: 'OpenStreetMap' }));
-  const site = t.website || t['contact:website'];
+  const site = tg.website || tg['contact:website'];
   if (site && /^https?:\/\//i.test(site)) links.append(el('a', { href: site, target: '_blank', rel: 'noopener', textContent: 'Website' }));
-  if (phone) links.append(el('a', { href: 'tel:' + phone.split(';')[0].replace(/[^\d+]/g, ''), textContent: 'Anrufen' }));
+  if (phone) links.append(el('a', { href: 'tel:' + phone.split(';')[0].replace(/[^\d+]/g, ''), textContent: t('Anrufen', 'Call') }));
   box.append(links);
   return box;
 }
@@ -3313,14 +3342,15 @@ function render(totalMain, where) {
   resultLayer.clearLayers(); poiLayer.clearLayers(); highlightLayer.clearLayers();
 
   const total = `${totalMain} × ${mainCat.label} ${where}`;
-  if (!totalMain) setStatus(`Keine Treffer für „${mainCat.label}“ ${where}.`);
-  else if (!conds.length) setStatus([el('strong', { textContent: total }), ' gefunden.']);
-  else setStatus([el('strong', { textContent: `${results.length} von ${totalMain}` }), ` × ${mainCat.label} ${where} ${results.length === 1 ? 'erfüllt' : 'erfüllen'} alle Bedingungen.`]);
+  if (!totalMain) setStatus(t(`Keine Treffer für „${mainCat.label}“ ${where}.`, `No results for “${mainCat.label}” ${where}.`));
+  else if (!conds.length) setStatus([el('strong', { textContent: total }), t(' gefunden.', ' found.')]);
+  else setStatus([el('strong', { textContent: t(`${results.length} von ${totalMain}`, `${results.length} of ${totalMain}`) }),
+    ` × ${mainCat.label} ${where} ` + t(results.length === 1 ? 'erfüllt alle Bedingungen.' : 'erfüllen alle Bedingungen.', results.length === 1 ? 'meets all conditions.' : 'meet all conditions.')]);
 
   if (current.note) $('#status').append(el('div', { className: 'r-sub', textContent: current.note }));
-  const fuzzy = current.source === 'osm' ? [mainCat, ...conds].filter(c => c.fuzzy).map(c => `„${c.label}“`) : [];
+  const fuzzy = current.source === 'osm' ? [mainCat, ...conds].filter(c => c.fuzzy).map(c => t(`„${c.label}“`, `“${c.label}”`)) : [];
   if (fuzzy.length) {
-    $('#status').append(el('div', { className: 'r-sub', textContent: `${fuzzy.join(', ')} kenne ich nicht als Kategorie – gesucht wurde in Namen, Marken und Stichworten.` }));
+    $('#status').append(el('div', { className: 'r-sub', textContent: t(`${fuzzy.join(', ')} kenne ich nicht als Kategorie – gesucht wurde in Namen, Marken und Stichworten.`, `${fuzzy.join(', ')} is not a known category – searched names, brands and keywords.`) }));
   }
 
   // Umgebungs-Punkte, die zu mindestens einem Treffer gehören
@@ -3344,7 +3374,7 @@ function render(totalMain, where) {
       .on('click', () => select(idx, false))
       .addTo(resultLayer);
 
-    const sub = [r.fromMe != null && `${fmtDist(r.fromMe)} von dir`, r.tags.cuisine && r.tags.cuisine.replace(/_/g, ' ').replace(/;/g, ', '), r.tags.kind, ratingText(r.tags), address(r.tags)].filter(Boolean).join(' · ');
+    const sub = [r.fromMe != null && t(`${fmtDist(r.fromMe)} von dir`, `${fmtDist(r.fromMe)} from you`), r.tags.cuisine && r.tags.cuisine.replace(/_/g, ' ').replace(/;/g, ', '), r.tags.kind, ratingText(r.tags), address(r.tags)].filter(Boolean).join(' · ');
     const chips = el('div', { className: 'chips' });
     r.near.forEach((hits, i) => chips.append(el('span', { className: 'chip' },
       el('span', { className: 'dot', style: { background: conds[i].color, width: '9px', height: '9px' } }),
@@ -3416,7 +3446,7 @@ function select(idx, fromList) {
 // ---------- Events ----------
 $('#form').addEventListener('submit', e => { e.preventDefault(); runSearch(false); });
 $('#searchView').addEventListener('click', () => runSearch(true));
-$('#useMe').addEventListener('click', () => { $('#place').value = 'Um mich herum'; });
+$('#useMe').addEventListener('click', () => { $('#place').value = t('Um mich herum', 'Around me'); });
 
 </script>
 </body>

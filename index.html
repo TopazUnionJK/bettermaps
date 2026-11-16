@@ -7,6 +7,24 @@
     if (navigator.standalone || matchMedia('(display-mode: standalone)').matches ||
         /[?&](approve|code|token_hash)=|access_token|error_description/.test(location.search + location.hash))
       location.replace('app/' + location.search + location.hash);
+    // Erster Besuch ohne Deutsch in den Browsersprachen: englische Seite (Suchmaschinen ausgenommen)
+    else {
+      let choice = null;
+      try { choice = localStorage.getItem('nttm.lang'); } catch (e) {}
+      const langs = navigator.languages || [navigator.language || ''];
+      const robot = navigator.webdriver ||
+        /bot|crawl|spider|slurp|preview|google|lighthouse|headless|inspection|bing|yandex|facebookexternalhit/i.test(navigator.userAgent);
+      if (choice === 'en' || (!choice && !robot && !langs.some(l => /^de\b/i.test(l)))) {
+        // Herkunft für die Statistik mitgeben, sonst sieht die englische Seite nur nexttomaps.com als Referrer
+        const q = new URLSearchParams(location.search);
+        try {
+          const host = document.referrer && new URL(document.referrer).hostname.replace(/^www\./, '');
+          if (host && host !== location.hostname.replace(/^www\./, '') && !q.has('utm_source') && !q.has('ref')) q.set('ref', host);
+        } catch (e) {}
+        const qs = q.toString();
+        location.replace('en/' + (qs ? '?' + qs : '') + location.hash);
+      }
+    }
   </script>
 
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -16,6 +34,9 @@
   <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="icon" href="icon-192.png">
+  <link rel="alternate" hreflang="de" href="https://nexttomaps.com/">
+  <link rel="alternate" hreflang="en" href="https://nexttomaps.com/en/">
+  <link rel="alternate" hreflang="x-default" href="https://nexttomaps.com/">
   <style>
     /* Entwurf Landingpage. Name und Preise stehen nur in dieser Datei. */
     :root {
@@ -166,6 +187,7 @@
       .cases { grid-template-columns: 1fr 1fr; }
       .tile, .tile.wide { grid-column: span 6; }
       nav a.link { display: none; }
+      nav a.link.lang { display: inline; }
       .price .sub { min-height: 0; }
     }
     @media (max-width: 520px) {
@@ -173,6 +195,9 @@
       .wrap { width: calc(100% - 32px); }
       .cases { grid-template-columns: 1fr; }
       .cta .btn { width: 100%; }
+      nav .wrap { gap: 12px; }
+      nav .btn.small { padding: 9px 12px; }
+      .logo { font-size: 18px; }
     }
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
   </style>
@@ -185,6 +210,7 @@
       <svg viewBox="0 0 32 44" aria-hidden="true"><path d="M16 1C7.7 1 1 7.7 1 16c0 11 15 27 15 27s15-16 15-27C31 7.7 24.3 1 16 1z" fill="var(--red)"/><path d="M16 9v14M9 16h14" stroke="#fff" stroke-width="3.6" stroke-linecap="round"/></svg>
       <span><b>NextTo</b>Maps</span>
     </a>
+    <a class="link lang" href="en/" hreflang="en" lang="en" aria-label="English version">EN</a>
     <a class="link" href="#vorteile">Vorteile</a>
     <a class="link" href="#beispiele">Beispiele</a>
     <a class="link" href="#preise">Preise</a>
@@ -259,7 +285,7 @@
 <section id="warum">
   <div class="wrap">
     <div class="kicker">Das Problem</div>
-    <h2>Google Maps kann „und“ nicht.</h2>
+    <h2>Kartensuchen können keine verknüpfte Umgebungssuche.</h2>
     <p class="lead">Wer zwei Dinge gleichzeitig braucht, sucht bisher doppelt und vergleicht von Hand. NextToMaps erledigt das in einer Suche.</p>
     <div class="versus">
       <div class="vs bad">

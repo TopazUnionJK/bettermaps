@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <script>
+    // Alte Links (Freigabe, Anmeldung) und die App vom Home-Bildschirm direkt in die App leiten
+    if (navigator.standalone || matchMedia('(display-mode: standalone)').matches ||
+        /[?&](approve|code|token_hash)=|access_token|error_description/.test(location.search + location.hash))
+      location.replace('app/' + location.search + location.hash);
+  </script>
+
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>NextToMaps – the map search that also knows the surroundings</title>
+  <meta name="description" content="Restaurant with a playground next door? Hotel with a charging station? NextToMaps finds places where the surroundings fit too – with reviews and opening hours from Google.">
+  <meta name="theme-color" content="#0b0e13" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="../icon.svg" type="image/svg+xml">
+  <link rel="icon" href="../icon-192.png">
+  <link rel="alternate" hreflang="de" href="https://nexttomaps.com/">
+  <link rel="alternate" hreflang="en" href="https://nexttomaps.com/en/">
+  <link rel="alternate" hreflang="x-default" href="https://nexttomaps.com/">
+  <style>
+    /* Entwurf Landingpage. Name und Preise stehen nur in dieser Datei. */
+    :root {
+      --bg: #0b0e13; --bg2: #11151c; --card: #151a22; --line: #252c38;
+      --fg: #f2f4f7; --muted: #9aa4b2; --faint: #6b7584;
+      --red: #ff5a4d; --red-fg: #1a0806; --mint: #3ddc97; --sun: #ffc247; --blue: #6aa8ff;
+      --map: #131922; --map-road: #222b38; --map-water: #14283a; --map-park: #15281f;
+      --shadow: 0 24px 60px rgba(0, 0, 0, .45);
+      --font: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f4ef; --bg2: #efece5; --card: #ffffff; --line: #e2ddd2;
+        --fg: #14171c; --muted: #5a6370; --faint: #8a919c;
+        --red: #e8402f; --red-fg: #ffffff; --mint: #0f9d63; --sun: #c98600; --blue: #1a66d6;
+        --map: #eef0ea; --map-road: #ffffff; --map-water: #cfe3f2; --map-park: #d5ead2;
+        --shadow: 0 24px 60px rgba(40, 30, 10, .14);
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.55 var(--font); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+    a { color: inherit; }
+    .wrap { width: min(1120px, 100% - 40px); margin: 0 auto; }
+    h1, h2, h3 { margin: 0; line-height: 1.08; letter-spacing: -.02em; }
+    h2 { font-size: clamp(30px, 4.4vw, 46px); }
+    .kicker { color: var(--red); font-weight: 700; font-size: 14px; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 14px; }
+    .lead { color: var(--muted); font-size: 19px; max-width: 620px; margin: 16px 0 0; }
+    section { padding: 88px 0; }
+
+    /* Kopf */
+    nav { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); background: color-mix(in srgb, var(--bg) 78%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+    nav .wrap { display: flex; align-items: center; gap: 26px; height: 64px; }
+    .logo { display: flex; align-items: center; gap: 9px; font-weight: 800; font-size: 20px; letter-spacing: -.02em; text-decoration: none; margin-right: auto; }
+    .logo svg { width: 22px; height: 30px; }
+    .logo b { color: var(--red); font-weight: 800; }
+    nav a.link { color: var(--muted); text-decoration: none; font-size: 15px; font-weight: 500; }
+    nav a.link:hover { color: var(--fg); }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 13px 22px; border-radius: 999px; font: inherit; font-weight: 700; font-size: 16px; text-decoration: none; border: 1px solid transparent; cursor: pointer; transition: transform .15s, box-shadow .15s; }
+    .btn:hover { transform: translateY(-1px); }
+    .btn.primary { background: var(--red); color: var(--red-fg); box-shadow: 0 8px 24px color-mix(in srgb, var(--red) 35%, transparent); }
+    .btn.ghost { border-color: var(--line); color: var(--fg); }
+    .btn.small { padding: 9px 16px; font-size: 14.5px; }
+
+    /* Hero */
+    .hero { padding: 72px 0 60px; position: relative; }
+    .hero::before { content: ""; position: absolute; inset: -120px -20% auto; height: 620px; z-index: -1; pointer-events: none;
+      background: radial-gradient(520px 320px at 22% 30%, color-mix(in srgb, var(--red) 22%, transparent), transparent 70%),
+                  radial-gradient(520px 340px at 80% 20%, color-mix(in srgb, var(--mint) 16%, transparent), transparent 70%); }
+    .hero .wrap { display: grid; grid-template-columns: 1.02fr 1fr; gap: 54px; align-items: center; }
+    h1 { font-size: clamp(42px, 6.6vw, 76px); font-weight: 800; }
+    h1 .dazu { color: var(--red); display: block; }
+    .hero p.lead { font-size: 20px; }
+    .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+    .trust { margin-top: 18px; color: var(--faint); font-size: 14.5px; }
+
+    /* Demo */
+    .demo { background: var(--card); border: 1px solid var(--line); border-radius: 26px; box-shadow: var(--shadow); overflow: hidden; }
+    .demo-map { display: block; width: 100%; height: auto; background: var(--map); }
+    .demo-form { padding: 18px 18px 20px; }
+    .field { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 14px; background: var(--bg2); border: 1px solid var(--line); font-weight: 600; }
+    .field small { color: var(--faint); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; width: 44px; }
+    .demo-form .hint { margin: 14px 2px 8px; font-size: 12px; font-weight: 700; color: var(--faint); letter-spacing: .08em; text-transform: uppercase; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip { font: inherit; font-size: 14.5px; font-weight: 600; padding: 9px 14px; border-radius: 999px; background: transparent; color: var(--muted); border: 1px dashed var(--line); cursor: pointer; transition: all .18s; }
+    .chip[aria-pressed="true"] { border-style: solid; color: var(--fg); background: color-mix(in srgb, var(--c) 16%, transparent); border-color: color-mix(in srgb, var(--c) 60%, transparent); }
+    .chip i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--c); margin-right: 7px; }
+    .count { margin: 14px 2px 0; font-size: 15px; color: var(--muted); min-height: 24px; }
+    .count strong { color: var(--fg); }
+    .pin { transition: opacity .3s, transform .3s; transform-box: fill-box; transform-origin: 50% 100%; }
+    .pin.off { opacity: .16; transform: scale(.7); }
+    .ring { opacity: 0; transition: opacity .3s; }
+    .ring.on { opacity: 1; }
+
+    /* Vergleich */
+    .versus { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 42px; }
+    .vs { border-radius: 22px; padding: 28px; border: 1px solid var(--line); background: var(--card); }
+    .vs.good { border-color: color-mix(in srgb, var(--mint) 50%, var(--line)); background: linear-gradient(160deg, color-mix(in srgb, var(--mint) 9%, var(--card)), var(--card) 60%); }
+    .vs h3 { font-size: 21px; margin-bottom: 16px; }
+    .vs ol, .vs ul { margin: 0; padding: 0; list-style: none; color: var(--muted); }
+    .vs li { padding: 8px 0 8px 30px; position: relative; }
+    .vs li::before { position: absolute; left: 0; top: 8px; font-weight: 800; }
+    .vs.bad li::before { content: "✕"; color: var(--faint); }
+    .vs.good li::before { content: "✓"; color: var(--mint); }
+    .vs.good li { color: var(--fg); }
+
+    /* Vorteile */
+    .bento { display: grid; grid-template-columns: repeat(6, 1fr); gap: 18px; margin-top: 42px; }
+    .tile { grid-column: span 2; background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 26px; }
+    .tile.wide { grid-column: span 3; }
+    .tile .ico { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; font-size: 22px; margin-bottom: 16px; background: color-mix(in srgb, var(--c, var(--red)) 16%, transparent); }
+    .tile h3 { font-size: 20px; margin-bottom: 8px; letter-spacing: -.01em; }
+    .tile p { margin: 0; color: var(--muted); font-size: 16px; }
+
+    /* Beispiele */
+    .cases { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 42px; }
+    .case { border-radius: 20px; padding: 22px; background: var(--bg2); border: 1px solid var(--line); }
+    .case .who { font-size: 13px; font-weight: 700; color: var(--faint); letter-spacing: .08em; text-transform: uppercase; }
+    .case .what { font-size: 19px; font-weight: 700; margin: 10px 0 12px; line-height: 1.25; }
+    .tag { display: inline-block; font-size: 13.5px; font-weight: 600; padding: 5px 10px; border-radius: 999px; margin: 0 4px 6px 0; background: color-mix(in srgb, var(--c) 15%, transparent); color: var(--fg); }
+
+    /* Schritte */
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 42px; counter-reset: s; }
+    .step { padding: 26px; border-radius: 22px; border: 1px solid var(--line); }
+    .step::before { counter-increment: s; content: counter(s); display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: var(--red); color: var(--red-fg); font-weight: 800; margin-bottom: 16px; }
+    .step h3 { font-size: 20px; margin-bottom: 8px; }
+    .step p { margin: 0; color: var(--muted); font-size: 16px; }
+
+    /* Preise */
+    .prices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 42px; align-items: stretch; }
+    .price { display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line); border-radius: 24px; padding: 30px 26px; position: relative; }
+    .price.hot { border-color: var(--red); box-shadow: 0 18px 50px color-mix(in srgb, var(--red) 22%, transparent); }
+    .badge { position: absolute; top: -13px; left: 26px; background: var(--red); color: var(--red-fg); font-size: 12.5px; font-weight: 800; padding: 5px 12px; border-radius: 999px; letter-spacing: .04em; }
+    .price h3 { font-size: 20px; }
+    .price .amount { font-size: 46px; font-weight: 800; letter-spacing: -.03em; margin: 14px 0 2px; }
+    .price .amount span { font-size: 16px; font-weight: 600; color: var(--muted); letter-spacing: 0; }
+    .price .sub { color: var(--muted); font-size: 15px; min-height: 46px; }
+    .price ul { list-style: none; padding: 0; margin: 18px 0 26px; flex: 1; }
+    .price li { padding: 7px 0 7px 28px; position: relative; font-size: 16px; }
+    .price li::before { content: "✓"; position: absolute; left: 0; color: var(--mint); font-weight: 800; }
+    .price .btn { width: 100%; }
+    .btn.soon { opacity: .55; cursor: default; box-shadow: none; }
+    .btn.soon:hover { transform: none; }
+    .fine { color: var(--faint); font-size: 14.5px; margin-top: 22px; max-width: 760px; }
+
+    /* Fragen */
+    .faq { max-width: 780px; margin-top: 34px; }
+    .faq details { border-bottom: 1px solid var(--line); padding: 18px 0; }
+    .faq summary { cursor: pointer; font-weight: 700; font-size: 18px; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+    .faq summary::-webkit-details-marker { display: none; }
+    .faq summary::after { content: "+"; color: var(--red); font-size: 24px; line-height: 1; transition: transform .2s; }
+    .faq details[open] summary::after { transform: rotate(45deg); }
+    .faq p { color: var(--muted); margin: 10px 0 0; }
+
+    /* Abschluss */
+    .final { text-align: center; border-radius: 32px; padding: 68px 24px; margin-bottom: 40px; border: 1px solid var(--line);
+      background: radial-gradient(600px 260px at 50% 0%, color-mix(in srgb, var(--red) 24%, transparent), transparent 70%), var(--card); }
+    .final h2 { max-width: 720px; margin: 0 auto; }
+    .final .cta { justify-content: center; }
+    footer { border-top: 1px solid var(--line); padding: 30px 0 46px; color: var(--faint); font-size: 14px; }
+    footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 26px; justify-content: space-between; }
+
+    @media (max-width: 900px) {
+      section { padding: 64px 0; }
+      .hero { padding-top: 44px; }
+      .hero .wrap { grid-template-columns: 1fr; gap: 36px; }
+      .versus, .steps, .prices { grid-template-columns: 1fr; }
+      .cases { grid-template-columns: 1fr 1fr; }
+      .tile, .tile.wide { grid-column: span 6; }
+      nav a.link { display: none; }
+      nav a.link.lang { display: inline; }
+      .price .sub { min-height: 0; }
+    }
+    @media (max-width: 520px) {
+      body { font-size: 16px; }
+      .wrap { width: calc(100% - 32px); }
+      .cases { grid-template-columns: 1fr; }
+      .cta .btn { width: 100%; }
+      nav .wrap { gap: 12px; }
+      nav .btn.small { padding: 9px 12px; }
+      .logo { font-size: 18px; }
+    }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="logo" href="#top" aria-label="NextToMaps">
+      <svg viewBox="0 0 32 44" aria-hidden="true"><path d="M16 1C7.7 1 1 7.7 1 16c0 11 15 27 15 27s15-16 15-27C31 7.7 24.3 1 16 1z" fill="var(--red)"/><path d="M16 9v14M9 16h14" stroke="#fff" stroke-width="3.6" stroke-linecap="round"/></svg>
+      <span><b>NextTo</b>Maps</span>
+    </a>
+    <a class="link lang" href="../" hreflang="de" lang="de" aria-label="Deutsche Version">DE</a>
+    <a class="link" href="#vorteile">Benefits</a>
+    <a class="link" href="#beispiele">Examples</a>
+    <a class="link" href="#preise">Pricing</a>
+    <a class="btn primary small" href="app/">Start for free</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <div>
+      <div class="kicker">The better map search</div>
+      <h1>Pizza.<span class="dazu">Right next to the playground.</span></h1>
+      <p class="lead">Google Maps finds the restaurant. NextToMaps finds the restaurant where the playground, the car park or the charging station is right next door too.</p>
+      <div class="cta">
+        <a class="btn primary" href="app/">Start for free</a>
+        <a class="btn ghost" href="#vorteile">How it works</a>
+      </div>
+      <p class="trust">No password, no app store. Runs in the browser and on your phone.</p>
+    </div>
+
+    <div class="demo" aria-label="Example search to try out">
+      <svg class="demo-map" viewBox="0 0 520 300" role="img" aria-label="Map with eight restaurants">
+        <rect width="520" height="300" fill="var(--map)"/>
+        <path d="M-10 236 C90 206 150 262 250 240 S430 196 540 226 V310 H-10z" fill="var(--map-water)"/>
+        <rect x="300" y="26" width="120" height="78" rx="16" fill="var(--map-park)"/>
+        <rect x="44" y="120" width="92" height="64" rx="14" fill="var(--map-park)"/>
+        <g stroke="var(--map-road)" stroke-linecap="round" fill="none">
+          <path d="M-10 92 H530" stroke-width="13"/><path d="M-10 198 C120 186 300 204 530 172" stroke-width="13"/>
+          <path d="M170 -10 V250" stroke-width="11"/><path d="M270 -10 C262 90 290 150 280 240" stroke-width="9"/>
+          <path d="M450 -10 V220" stroke-width="11"/><path d="M60 -10 V110" stroke-width="7"/><path d="M360 100 V190" stroke-width="7"/>
+        </g>
+        <!-- Umkreise der Bedingungen -->
+        <g fill-opacity=".13" stroke-width="1.6" stroke-dasharray="5 5">
+          <circle class="ring" data-c="spiel" cx="352" cy="62" r="62" fill="#3ddc97" stroke="#3ddc97"/>
+          <circle class="ring" data-c="spiel" cx="90" cy="150" r="62" fill="#3ddc97" stroke="#3ddc97"/>
+          <circle class="ring" data-c="park" cx="228" cy="140" r="58" fill="#6aa8ff" stroke="#6aa8ff"/>
+          <circle class="ring" data-c="park" cx="408" cy="128" r="58" fill="#6aa8ff" stroke="#6aa8ff"/>
+          <circle class="ring" data-c="lade" cx="398" cy="70" r="52" fill="#ffc247" stroke="#ffc247"/>
+          <circle class="ring" data-c="lade" cx="130" cy="60" r="52" fill="#ffc247" stroke="#ffc247"/>
+        </g>
+        <g>
+          <circle class="ring" data-c="spiel" cx="352" cy="62" r="6" fill="#3ddc97"/><circle class="ring" data-c="spiel" cx="90" cy="150" r="6" fill="#3ddc97"/>
+          <circle class="ring" data-c="park" cx="228" cy="140" r="6" fill="#6aa8ff"/><circle class="ring" data-c="park" cx="408" cy="128" r="6" fill="#6aa8ff"/>
+          <circle class="ring" data-c="lade" cx="398" cy="70" r="6" fill="#ffc247"/><circle class="ring" data-c="lade" cx="130" cy="60" r="6" fill="#ffc247"/>
+        </g>
+        <!-- Restaurants: data-has = erfüllte Bedingungen -->
+        <g id="pins" fill="var(--red)" stroke="#fff" stroke-width="2">
+          <path class="pin" data-has="spiel park lade" transform="translate(386 120)" d="M0 0c-7-9-11-14-11-20a11 11 0 0 1 22 0c0 6-4 11-11 20z"/>
+          <path class="pin" data-has="spiel lade"      transform="translate(318 92)"  d="M0 0c-7-9-11-14-11-20a11 11 0 0 1 22 0c0 6-4 11-11 20z"/>
+          <path class="pin" data-has="spiel park"      transform="translate(396 176)" d="M0 0c-7-9-11-14-11-20a11 11 0 0 1 22 0c0 6-4 11-11 20z"/>
+          <path class="pin" data-has="spiel park"      transform="translate(140 172)" d="M0 0c-7-9-11-14-11-20a11 11 0 0 1 22 0c0 6-4 11-11 20z"/>
+          <path class="pin" data-has="park"            transform="translate(250 190)" d="M0 0c-7-9-11-14-11-20a11 11 0 0 1 22 0c0 6-4 11-11 20z"/>
+          <path class="pin" data-has="lade"            transform="translate(166 82)"  d="M0 0c-7-9-11-14-11-20a11 11 0 0 1 22 0c0 6-4 11-11 20z"/>
+          <path class="pin" data-has=""                transform="translate(486 62)"  d="M0 0c-7-9-11-14-11-20a11 11 0 0 1 22 0c0 6-4 11-11 20z"/>
+          <path class="pin" data-has=""                transform="translate(40 226)"  d="M0 0c-7-9-11-14-11-20a11 11 0 0 1 22 0c0 6-4 11-11 20z"/>
+        </g>
+      </svg>
+      <div class="demo-form">
+        <div class="field"><small>What?</small>Restaurant</div>
+        <div class="hint">Must be nearby – tap to try</div>
+        <div class="chips">
+          <button class="chip" style="--c: var(--mint)" data-c="spiel" aria-pressed="true"><i></i>Playground ≤ 300 m</button>
+          <button class="chip" style="--c: var(--blue)" data-c="park" aria-pressed="false"><i></i>Car park ≤ 200 m</button>
+          <button class="chip" style="--c: var(--sun)" data-c="lade" aria-pressed="false"><i></i>Charging station ≤ 250 m</button>
+        </div>
+        <p class="count" id="count" role="status"></p>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="warum">
+  <div class="wrap">
+    <div class="kicker">The problem</div>
+    <h2>Map searches can't combine places with their surroundings.</h2>
+    <p class="lead">If you need two things at once, you search twice and compare by hand. NextToMaps does it in one search.</p>
+    <div class="versus">
+      <div class="vs bad">
+        <h3>So far with Google Maps</h3>
+        <ul>
+          <li>Search for restaurants, note the list</li>
+          <li>New search: playgrounds</li>
+          <li>Zoom back and forth, estimate distances</li>
+          <li>Start over for every candidate</li>
+        </ul>
+      </div>
+      <div class="vs good">
+        <h3>With NextToMaps</h3>
+        <ul>
+          <li>One search: “Restaurant”, plus “Playground within 300 m”</li>
+          <li>Only matches where everything really fits</li>
+          <li>Distance to the playground shown right away</li>
+          <li>One tap on “Route” and Google Maps takes you there</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="vorteile" style="background: var(--bg2)">
+  <div class="wrap">
+    <div class="kicker">Benefits</div>
+    <h2>Everything you like about Google Maps.<br>Plus what's missing.</h2>
+    <div class="bento">
+      <div class="tile wide" style="--c: var(--red)"><div class="ico">＋</div><h3>Combine conditions</h3><p>As many things as you like that must be nearby, each with its own radius: playground within 300 m, car park within 200 m, train station within 1 km.</p></div>
+      <div class="tile wide" style="--c: var(--sun)"><div class="ico">★</div><h3>Google's good data</h3><p>Reviews, opening hours, “open now”, website and phone number come directly from Google. You give up nothing.</p></div>
+      <div class="tile" style="--c: var(--mint)"><div class="ico">◎</div><h3>Around me</h3><p>One tap, and you see matching places around your location, nearest first.</p></div>
+      <div class="tile" style="--c: var(--blue)"><div class="ico">➜</div><h3>Route in one tap</h3><p>Every result has a link that opens the route from your location in Google Maps.</p></div>
+      <div class="tile" style="--c: var(--red)"><div class="ico">▦</div><h3>Map and list together</h3><p>Tap a result, read the details, see the radii on the map. On your phone it works like an app.</p></div>
+      <div class="tile wide" style="--c: var(--mint)"><div class="ico">⌖</div><h3>Search in the visible map area</h3><p>Move the map to where you want to go and search exactly there. Or simply type a place: city, district, village.</p></div>
+      <div class="tile wide" style="--c: var(--blue)"><div class="ico">✉</div><h3>No password, no installation</h3><p>Sign in with a code sent to your email address. Works in any browser and can be added to your home screen.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="beispiele">
+  <div class="wrap">
+    <div class="kicker">Examples</div>
+    <h2>For everyone who needs more than one thing.</h2>
+    <div class="cases">
+      <div class="case"><div class="who">Families</div><div class="what">Eat out while the kids play</div><span class="tag" style="--c: var(--red)">Restaurant</span><span class="tag" style="--c: var(--mint)">Playground ≤ 200 m</span></div>
+      <div class="case"><div class="who">E-car</div><div class="what">Charge while you sleep or eat</div><span class="tag" style="--c: var(--red)">Hotel</span><span class="tag" style="--c: var(--sun)">Charging station ≤ 300 m</span></div>
+      <div class="case"><div class="who">On the way</div><div class="what">Coffee until the train comes</div><span class="tag" style="--c: var(--red)">Café</span><span class="tag" style="--c: var(--blue)">Train station ≤ 400 m</span></div>
+      <div class="case"><div class="who">Outing</div><div class="what">Get ice cream and go straight to the water</div><span class="tag" style="--c: var(--red)">Ice cream parlour</span><span class="tag" style="--c: var(--mint)">Park ≤ 300 m</span><span class="tag" style="--c: var(--blue)">Car park ≤ 200 m</span></div>
+    </div>
+  </div>
+</section>
+
+<section style="background: var(--bg2)">
+  <div class="wrap">
+    <div class="kicker">How it works</div>
+    <h2>Three steps. One search.</h2>
+    <div class="steps">
+      <div class="step"><h3>What are you looking for?</h3><p>Restaurant, pizza, ice cream parlour, hotel: type in what you would also type into Google Maps.</p></div>
+      <div class="step"><h3>What needs to be nearby?</h3><p>Add conditions and set, for each one, how far away it may be at most.</p></div>
+      <div class="step"><h3>Go there</h3><p>You only get places where everything fits, with rating, opening hours and route.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="preise">
+  <div class="wrap">
+    <div class="kicker">Pricing</div>
+    <h2>Start for free. Pay only if you want more.</h2>
+    <p class="lead">The OpenStreetMap search is always free and unlimited. The Google data costs us money per query, which is why it is rationed.</p>
+    <div class="prices">
+      <div class="price hot">
+        <div class="badge">AVAILABLE NOW</div>
+        <h3>Free</h3>
+        <div class="amount">€0</div>
+        <div class="sub">To try out and for occasional searches.</div>
+        <ul>
+          <li>Unlimited searches with OpenStreetMap</li>
+          <li>10 Google queries per month</li>
+          <li>All conditions and radii</li>
+        </ul>
+        <a class="btn primary" href="app/">Start for free</a>
+      </div>
+      <div class="price">
+        <h3>Plus</h3>
+        <div class="amount">€4.99 <span>/ month</span></div>
+        <div class="sub">For people who are out and about regularly.</div>
+        <ul>
+          <li>100 Google queries per month<br><small style="color: var(--muted)">enough for about 40 to 100 searches</small></li>
+          <li>Ratings, opening hours, website</li>
+          <li>Unlimited OpenStreetMap</li>
+          <li>Cancel monthly</li>
+        </ul>
+        <span class="btn ghost soon" aria-disabled="true">Plus · Coming soon</span>
+      </div>
+      <div class="price">
+        <h3>Pro</h3>
+        <div class="amount">€9.99 <span>/ month</span></div>
+        <div class="sub">For heavy users, trip planning and professional use.</div>
+        <ul>
+          <li>200 Google queries per month<br><small style="color: var(--muted)">enough for about 80 to 200 searches</small></li>
+          <li>Everything in Plus</li>
+          <li>Annual plan €109 (1 month free)</li>
+        </ul>
+        <span class="btn ghost soon" aria-disabled="true">Pro · Coming soon</span>
+      </div>
+    </div>
+    <p class="fine">Quota used up? You can carry on for free with OpenStreetMap straight away, or buy 100 Google queries for €4.99. A search usually needs 1 to 3 Google queries. All prices include VAT.</p>
+  </div>
+</section>
+
+<section style="padding-top: 0">
+  <div class="wrap">
+    <div class="kicker">Questions</div>
+    <h2>Briefly explained</h2>
+    <div class="faq">
+      <details><summary>Does NextToMaps replace Google Maps?</summary><p>No, it complements it. NextToMaps finds the right place; the navigation there is handled by Google Maps with one tap on “Route”.</p></details>
+      <details><summary>What is a Google query?</summary><p>Each results page we fetch from Google counts as one query. A normal search needs 1 to 3. Conditions such as playground, car park or charging station come from our own database and cost nothing.</p></details>
+      <details><summary>Where does it work?</summary><p>The Google search works everywhere. Our fast database for conditions covers Germany, Austria, Switzerland and Italy and is updated every month.</p></details>
+      <details><summary>How accurate are the distances?</summary><p>The distances are straight-line. The walking route may be somewhat longer.</p></details>
+      <details><summary>Do I need an app?</summary><p>No. NextToMaps runs in the browser. On your phone you can add it to your home screen, and then it feels like an app.</p></details>
+    </div>
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="final">
+    <h2>Don't search twice. Find what lies side by side.</h2>
+    <div class="cta"><a class="btn primary" href="app/">Start for free</a></div>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 NextToMaps · <a href="imprint.html">Imprint</a> · <a href="privacy.html">Privacy</a></span>
+    <span>Data: © OpenStreetMap contributors and Google. Google Maps is a trademark of Google LLC. NextToMaps is an independent service and not affiliated with Google.</span>
+  </div>
+</footer>
+
+<script>
+  // Kleine Demo: Bedingungen an- und abwählen, passende Restaurants bleiben stehen.
+  const chips = [...document.querySelectorAll('.chip')];
+  const pins = [...document.querySelectorAll('.pin')];
+  const rings = [...document.querySelectorAll('.ring')];
+  function update() {
+    const on = chips.filter(c => c.getAttribute('aria-pressed') === 'true').map(c => c.dataset.c);
+    let n = 0;
+    for (const p of pins) {
+      const has = p.dataset.has.split(' ');
+      const ok = on.every(c => has.includes(c));
+      p.classList.toggle('off', !ok);
+      if (ok) n++;
+    }
+    for (const r of rings) r.classList.toggle('on', on.includes(r.dataset.c));
+    const c = document.getElementById('count');
+    c.innerHTML = on.length
+      ? `<strong>${n} of ${pins.length}</strong> restaurants ${n === 1 ? 'matches' : 'match'} all conditions.`
+      : `<strong>${pins.length}</strong> restaurants found. Pick a condition.`;
+  }
+  chips.forEach(c => c.addEventListener('click', () => {
+    c.setAttribute('aria-pressed', String(c.getAttribute('aria-pressed') !== 'true'));
+    update();
+  }));
+  update();
+</script>
+<script src="../count.js" defer></script>
+</body>
+</html>

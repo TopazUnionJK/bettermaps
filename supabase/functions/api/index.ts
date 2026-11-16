@@ -1,5 +1,5 @@
 // NextToMaps-Backend: hält den Google-Schlüssel geheim, prüft Login und Tageslimit.
-//   GET  /api/me      → Tarif, heutige Nutzung, Limit, Freischaltung, Schlüssel für die Kartenanzeige
+//   GET  /api/me      → Tarif, Nutzung im Monat, Monatslimit, Freischaltung, Schlüssel für die Kartenanzeige
 //   POST /api/login   → Anmeldung anfragen (ohne Login): neues Konto wartet auf Freischaltung, erst dann gibt es einen Code
 //   POST /api/approve → Freischalten/Ablehnen über den signierten Link aus der Betreiber-Mail (ohne Login)
 //   POST /api/search  → eine Seite Google „Text Search (New)“ (zählt 1 Abfrage)
@@ -24,6 +24,11 @@ const SMTP_USER = Deno.env.get('SMTP_USER') ?? '';
 const SMTP_PASS = Deno.env.get('SMTP_PASS') ?? '';
 const APPROVE_SECRET = Deno.env.get('APPROVE_SECRET') ?? '';
 const APP_URL = 'https://nexttomaps.com/app/';
+const APP_URL_EN = 'https://nexttomaps.com/en/app/';
+type Lang = 'de' | 'en';
+// Sprache der App (Header X-Lang), Standard Deutsch.
+const langOf = (req: Request): Lang => (req.headers.get('x-lang') === 'en' ? 'en' : 'de');
+const tr = (req: Request, de: string, en: string) => (langOf(req) === 'en' ? en : de);
 // Wer die Statistik sehen darf (kommagetrennt); ohne Angabe nur ADMIN_EMAIL.
 const STATS_EMAILS = (Deno.env.get('STATS_EMAILS') || ADMIN_EMAIL).split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
 const COUNTED_ORIGINS = ['https://nexttomaps.com', 'https://www.nexttomaps.com'];
@@ -49,7 +54,7 @@ function cors(req: Request): Record<string, string> {
   const origin = req.headers.get('origin') ?? '';
   return {
     'Access-Control-Allow-Origin': ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0],
-    'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
+    'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info, x-lang',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Vary': 'Origin',
   };
@@ -117,9 +122,10 @@ async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
 const userIdByEmail = (email: string) => rpc<string | null>('user_id_by_email', { p_email: email });
 
 // Anfrage holen/anlegen; bei Bedarf (einmal pro Anfrage) Mail an den Betreiber im Hintergrund.
-async function openRequest(email: string, ip: string | null) {
+async function openRequest(email: string, ip: string | null, lang?: Lang) {
   const rows = await rpc<{ id: string | null; status: string; notify: boolean }[]>('login_request_open', { p_email: email, p_ip: ip });
   const r = rows[0];
+  if (lang && r?.id) await rpc('login_request_lang', { p_id: r.id, p_lang: lang }).catch(e => console.error(e));
   if (r?.notify && r.id) {
     const job = notifyAdmin(r.id, email).catch(e => console.error(e));
     // deno-lint-ignore no-explicit-any
@@ -149,10 +155,10 @@ async function notifyAdmin(id: string, email: string) {
 }
 
 // Konto anlegen bzw. finden und als freigeschaltet markieren.
-async function ensureApprovedUser(email: string) {
+async function ensureApprovedUser(email: string, lang: Lang = 'de') {
   let uid = await userIdByEmail(email);
   if (!uid) {
-    const { data, error } = await admin.auth.admin.createUser({ email, email_confirm: true });
+    const { data, error } = await admin.auth.admin.createUser({ email, email_confirm: true, user_metadata: { lang } });
     uid = data?.user?.id ?? await userIdByEmail(email); // gleichzeitig angelegt?
     if (!uid) throw new Error(error?.message ?? 'Konto konnte nicht angelegt werden');
   }
@@ -163,15 +169,24 @@ async function ensureApprovedUser(email: string) {
 
 // Nach der Freischaltung: Mail mit Anmeldecode an den Nutzer. Bewusst ohne Anmelde-Link: Mail-Scanner,
 // die Links vorab öffnen, würden den Code sonst entwerten – und der Code bleibt in der Homescreen-App.
-async function sendWelcome(email: string) {
-  const { data, error } = await admin.auth.admin.generateLink({ type: 'magiclink', email, options: { redirectTo: APP_URL } });
+async function sendWelcome(email: string, lang: Lang = 'de') {
+  const url = lang === 'en' ? APP_URL_EN : APP_URL;
+  const { data, error } = await admin.auth.admin.generateLink({ type: 'magiclink', email, options: { redirectTo: url } });
   const code = data?.properties?.email_otp;
   if (error || !code) console.error('Anmeldecode für Freischalt-Mail fehlgeschlagen', error?.message);
+  if (lang === 'en') {
+    await sendMail(email, 'NextToMaps: Your account is ready',
+      'Hello,\n\nyour NextToMaps account has been approved.\n\n' +
+      (code ? `Your sign-in code: ${code}\n\nEnter it in the app under "Account". The code is only valid for a limited time – ` +
+        'if it has expired, simply request a new one in the app:\n'
+        : 'Request your sign-in code in the app under "Account":\n') + `${url}\n`);
+    return;
+  }
   await sendMail(email, 'NextToMaps: Dein Konto ist freigeschaltet',
     'Hallo,\n\ndein NextToMaps-Konto ist jetzt freigeschaltet.\n\n' +
     (code ? `Dein Anmeldecode: ${code}\n\nGib ihn in der App unter „Konto“ ein. Der Code ist nur begrenzt gültig – ` +
       'ist er abgelaufen, fordere in der App einfach einen neuen an:\n'
-      : 'Fordere in der App unter „Konto“ deinen Anmeldecode an:\n') + `${APP_URL}\n`);
+      : 'Fordere in der App unter „Konto“ deinen Anmeldecode an:\n') + `${url}\n`);
 }
 
 // Anmeldung anfragen (ohne Login). Nur bei „approved“ fordert die App danach einen Code an.
@@ -179,27 +194,34 @@ const EMAIL_RE = /^[^\s@]{1,64}@[^\s@.]+(\.[^\s@.]+)*\.[^\s@.]{2,}$/;
 async function handleLogin(req: Request) {
   const b = await req.json().catch(() => null);
   const email = typeof b?.email === 'string' ? b.email.trim().toLowerCase() : '';
-  if (email.length > 254 || !EMAIL_RE.test(email)) return json(req, { error: 'Bitte gib eine gültige E-Mail-Adresse ein.' }, 400);
+  if (email.length > 254 || !EMAIL_RE.test(email)) return json(req, { error: tr(req, 'Bitte gib eine gültige E-Mail-Adresse ein.', 'Please enter a valid email address.') }, 400);
   const uid = await userIdByEmail(email);
   if (uid) {
     // Bestehendes Konto (auch ältere, noch nicht freigeschaltete): Profil sicherstellen, Status melden.
     const { error } = await admin.from('profiles').upsert({ id: uid }, { onConflict: 'id', ignoreDuplicates: true });
     if (error) throw new Error(error.message);
     const status = await profileStatus(uid);
-    if (status === 'pending') await openRequest(email, clientIp(req));
+    if (status === 'pending') await openRequest(email, clientIp(req), langOf(req));
+    // Sprache für die Code-Mail von Supabase merken (Vorlage fragt .Data.lang ab); nur bei freigeschalteten
+    // Konten und im Hintergrund, damit die Antwort nicht darauf wartet.
+    if (status === 'approved') {
+      const job = admin.auth.admin.updateUserById(uid, { user_metadata: { lang: langOf(req) } }).catch(e => console.error(e));
+      // deno-lint-ignore no-explicit-any
+      (globalThis as any).EdgeRuntime?.waitUntil?.(job);
+    }
     return json(req, { status });
   }
-  const r = await openRequest(email, clientIp(req));
+  const r = await openRequest(email, clientIp(req), langOf(req));
   if (r.status === 'limited') {
-    return json(req, { error: 'Gerade gibt es sehr viele neue Anmeldungen. Bitte versuch es später noch einmal.' }, 429);
+    return json(req, { error: tr(req, 'Gerade gibt es sehr viele neue Anmeldungen. Bitte versuch es später noch einmal.', 'There are a lot of new sign-ups right now. Please try again later.') }, 429);
   }
-  if (r.status === 'approved') { await ensureApprovedUser(email); return json(req, { status: 'approved' }); } // Konto fehlte
+  if (r.status === 'approved') { await ensureApprovedUser(email, langOf(req)); return json(req, { status: 'approved' }); } // Konto fehlte
   return json(req, { status: r.status });
 }
 
 // Noch nicht freigeschaltetes Konto meldet sich (ältere Konten aus der Zeit vor den Anfragen).
 async function requestApprovalLater(req: Request, email: string) {
-  if (email) await openRequest(email.toLowerCase(), clientIp(req)).catch(e => console.error(e));
+  if (email) await openRequest(email.toLowerCase(), clientIp(req), langOf(req)).catch(e => console.error(e));
 }
 
 async function handleApprove(req: Request) {
@@ -225,11 +247,12 @@ async function handleApprove(req: Request) {
   }
   const email = row.email;
   if (b.action === 'info') return json(req, { email, status: row.status });
-  if (b.action !== 'approve' && b.action !== 'reject') return json(req, { error: 'Ungültige Anfrage.' }, 400);
+  if (b.action !== 'approve' && b.action !== 'reject') return json(req, { error: tr(req, 'Ungültige Anfrage.', 'Invalid request.') }, 400);
   if (b.action === 'approve') {
-    await ensureApprovedUser(email);
+    const lang: Lang = (await rpc<string>('login_request_lang', { p_id: reqId, p_lang: '' }).catch(() => 'de')) === 'en' ? 'en' : 'de';
+    await ensureApprovedUser(email, lang);
     const changed = await rpc<boolean>('login_request_decide', { p_id: reqId, p_status: 'approved' });
-    if (changed && SMTP_USER && SMTP_PASS) await sendWelcome(email).catch(e => console.error('Bestätigungs-Mail fehlgeschlagen', e));
+    if (changed && SMTP_USER && SMTP_PASS) await sendWelcome(email, lang).catch(e => console.error('Bestätigungs-Mail fehlgeschlagen', e));
     return json(req, { email, status: 'approved' });
   }
   await rpc('login_request_decide', { p_id: reqId, p_status: 'rejected' });
@@ -244,7 +267,7 @@ async function handleApprove(req: Request) {
 async function quota(uid: string, n: number) {
   const { data, error } = await admin.rpc('consume_quota', { uid, n });
   if (error) throw new Error(error.message);
-  return (Array.isArray(data) ? data[0] : data) as { allowed: boolean; used: number; daily_limit: number; plan: string };
+  return (Array.isArray(data) ? data[0] : data) as { allowed: boolean; used: number; quota_limit: number; plan: string; reason: string };
 }
 
 // Höchstens ca. 120 km × 120 km (Stadt + Umkreis), unabhängig vom Breitengrad.
@@ -370,10 +393,10 @@ Deno.serve(async (req) => {
   const path = new URL(req.url).pathname.replace(/^.*\/api/, '') || '/';
 
   if (req.method === 'POST' && path === '/login') {
-    try { return await handleLogin(req); } catch (e) { console.error(e); return json(req, { error: 'Serverfehler.' }, 500); }
+    try { return await handleLogin(req); } catch (e) { console.error(e); return json(req, { error: tr(req, 'Serverfehler.', 'Server error.') }, 500); }
   }
   if (req.method === 'POST' && path === '/approve') {
-    try { return await handleApprove(req); } catch (e) { console.error(e); return json(req, { error: 'Serverfehler.' }, 500); }
+    try { return await handleApprove(req); } catch (e) { console.error(e); return json(req, { error: tr(req, 'Serverfehler.', 'Server error.') }, 500); }
   }
 
   if (req.method === 'POST' && path === '/hit') {
@@ -382,14 +405,14 @@ Deno.serve(async (req) => {
   }
 
   const user = await currentUser(req);
-  if (!user) return json(req, { error: 'Bitte anmelden.' }, 401);
+  if (!user) return json(req, { error: tr(req, 'Bitte anmelden.', 'Please sign in.') }, 401);
   const uid = user.id;
 
   if (req.method === 'GET' && path === '/stats') {
     if (!STATS_EMAILS.includes(user.email.toLowerCase())) return json(req, { error: 'Kein Zugriff auf die Statistik.' }, 403);
     const days = Math.min(400, Math.max(1, Math.floor(Number(new URL(req.url).searchParams.get('days'))) || 30));
     try { return json(req, await rpc('site_stats', { p_days: days })); }
-    catch (e) { console.error(e); return json(req, { error: 'Serverfehler.' }, 500); }
+    catch (e) { console.error(e); return json(req, { error: tr(req, 'Serverfehler.', 'Server error.') }, 500); }
   }
 
   try {
@@ -397,7 +420,7 @@ Deno.serve(async (req) => {
       const q = await quota(uid, 0); // legt das Profil bei Bedarf an
       const status = await profileStatus(uid);
       if (status === 'pending') await requestApprovalLater(req, user.email);
-      return json(req, { plan: q.plan, used: q.used, limit: q.daily_limit, status,
+      return json(req, { plan: q.plan, used: q.used, limit: q.quota_limit, period: 'month', status,
         mapsKey: status === 'approved' ? MAPS_BROWSER_KEY : '' });
     }
 
@@ -405,8 +428,8 @@ Deno.serve(async (req) => {
     const status = await profileStatus(uid);
     if (status !== 'approved') {
       if (status === 'pending') await requestApprovalLater(req, user.email); // falls /me die Mail nicht ausgelöst hat
-      return json(req, { error: status === 'rejected' ? 'Dein Konto wurde nicht freigeschaltet.'
-        : 'Dein Konto wartet noch auf Freischaltung. Du bekommst eine E-Mail mit dem Anmeldecode, sobald es soweit ist.', status }, 403);
+      return json(req, { error: status === 'rejected' ? tr(req, 'Dein Konto wurde nicht freigeschaltet.', 'Your account was not approved.')
+        : tr(req, 'Dein Konto wartet noch auf Freischaltung. Du bekommst eine E-Mail mit dem Anmeldecode, sobald es soweit ist.', 'Your account is still waiting for approval. You will receive an email with your sign-in code as soon as it is approved.'), status }, 403);
     }
 
     if (req.method === 'POST' && path === '/search') {
@@ -417,19 +440,22 @@ Deno.serve(async (req) => {
       const text = typeof b?.textQuery === 'string' ? b.textQuery.trim().slice(0, 100) : '';
       if (!fields || !text || !r || !num(r.s, -90, 90) || !num(r.n, -90, 90) || !num(r.w, -180, 180) || !num(r.e, -180, 180)
         || r.n <= r.s || r.e <= r.w || !smallEnough(r)) {
-        return json(req, { error: 'Ungültige Anfrage.' }, 400);
+        return json(req, { error: tr(req, 'Ungültige Anfrage.', 'Invalid request.') }, 400);
       }
       if (b.pageToken != null && (typeof b.pageToken !== 'string' || b.pageToken.length > 2000)) {
-        return json(req, { error: 'Ungültige Anfrage.' }, 400);
+        return json(req, { error: tr(req, 'Ungültige Anfrage.', 'Invalid request.') }, 400);
       }
 
       const q = await quota(uid, 1);
       if (!q.allowed) {
-        return json(req, { error: `Tageslimit erreicht (${q.daily_limit} Google-Abfragen).`, used: q.used, limit: q.daily_limit, plan: q.plan }, 429);
+        return json(req, { error: q.reason === 'global'
+          ? tr(req, 'Google-Suche für heute ausgelastet. Mit OpenStreetMap geht es weiter.', 'Google search is at capacity for today. You can continue with OpenStreetMap.')
+          : tr(req, `Monatskontingent aufgebraucht (${q.used} von ${q.quota_limit} Google-Abfragen).`, `Monthly quota used up (${q.used} of ${q.quota_limit} Google queries).`),
+          reason: q.reason, used: q.used, limit: q.quota_limit, plan: q.plan }, 429);
       }
 
       const body: Record<string, unknown> = {
-        textQuery: text, languageCode: 'de', regionCode: 'DE', pageSize: 20,
+        textQuery: text, languageCode: langOf(req), regionCode: 'DE', pageSize: 20,
         locationRestriction: { rectangle: { low: { latitude: r.s, longitude: r.w }, high: { latitude: r.n, longitude: r.e } } },
       };
       if (b.pageToken) body.pageToken = b.pageToken;
@@ -455,9 +481,9 @@ Deno.serve(async (req) => {
         await quota(uid, -1).catch(() => {});
         console.error('Google-Fehler', g?.status, JSON.stringify(out).slice(0, 500));
         const status = g?.status === 400 ? 400 : 502;
-        return json(req, { error: status === 400 ? 'Google hat die Anfrage abgelehnt.' : 'Google-Suche derzeit nicht verfügbar.' }, status);
+        return json(req, { error: status === 400 ? tr(req, 'Google hat die Anfrage abgelehnt.', 'Google rejected the request.') : tr(req, 'Google-Suche derzeit nicht verfügbar.', 'Google search is currently unavailable.') }, status);
       }
-      return json(req, { ...out, quota: { used: q.used, limit: q.daily_limit } });
+      return json(req, { ...out, quota: { used: q.used, limit: q.quota_limit } });
     }
 
     if (req.method === 'POST' && path === '/near') {
@@ -469,11 +495,11 @@ Deno.serve(async (req) => {
         || !points.every((p: unknown) => Array.isArray(p) && num(p[0], -90, 90) && num(p[1], -180, 180))
         || !conds.every((c: { cat?: unknown; radius?: unknown }) => typeof c?.cat === 'string' && c.cat.length <= 40 && num(c.radius, 1, 5000))
         || new Set(conds.map((c: { cat: string }) => c.cat)).size !== conds.length) {
-        return json(req, { error: 'Ungültige Anfrage.' }, 400);
+        return json(req, { error: tr(req, 'Ungültige Anfrage.', 'Invalid request.') }, 400);
       }
       const lats = points.map((p: number[]) => p[0]), lons = points.map((p: number[]) => p[1]);
       const box = { s: Math.min(...lats), n: Math.max(...lats), w: Math.min(...lons), e: Math.max(...lons) };
-      if (!smallEnough(box)) return json(req, { error: 'Gebiet zu groß.' }, 400);
+      if (!smallEnough(box)) return json(req, { error: tr(req, 'Gebiet zu groß.', 'Area too large.') }, 400);
       const cats = conds.map((c: { cat: string }) => c.cat);
       if (!await isCovered(points.map(([lat, lon]: number[]) => tileKey(lat, lon)), cats)) return json(req, { covered: false });
       try {
@@ -490,7 +516,7 @@ Deno.serve(async (req) => {
       const r = b?.rect;
       if (typeof b?.cat !== 'string' || b.cat.length > 40 || !r || !num(r.s, -90, 90) || !num(r.n, -90, 90)
         || !num(r.w, -180, 180) || !num(r.e, -180, 180) || r.n <= r.s || r.e <= r.w || !smallEnough(r)) {
-        return json(req, { error: 'Ungültige Anfrage.' }, 400);
+        return json(req, { error: tr(req, 'Ungültige Anfrage.', 'Invalid request.') }, 400);
       }
       const probe = [[r.s, r.w], [r.s, r.e], [r.n, r.w], [r.n, r.e], [(r.s + r.n) / 2, (r.w + r.e) / 2]].map(([a, b]) => tileKey(a, b));
       if (!await isCovered(probe, [b.cat])) return json(req, { covered: false });
@@ -505,6 +531,6 @@ Deno.serve(async (req) => {
     return json(req, { error: 'Nicht gefunden.' }, 404);
   } catch (e) {
     console.error(e);
-    return json(req, { error: 'Serverfehler.' }, 500);
+    return json(req, { error: tr(req, 'Serverfehler.', 'Server error.') }, 500);
   }
 });
