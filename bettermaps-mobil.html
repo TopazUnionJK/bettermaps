@@ -2476,6 +2476,7 @@ const G_FIELDS_MAIN = 'places.id,places.displayName,places.location,places.forma
   'places.rating,places.userRatingCount,places.websiteUri,places.googleMapsUri,places.currentOpeningHours.openNow,nextPageToken';
 const G_FIELDS_NEAR = 'places.id,places.displayName,places.location,nextPageToken'; // günstiger: nur Name + Lage
 const G_MAX = 60;
+const ANCHOR_MAX = 5; // so wenige Orte hat eine Bedingung höchstens, damit zusätzlich um sie herum gesucht wird
 
 function googleError(json, status) {
   const msg = json?.error?.message || `HTTP ${status}`;
@@ -2664,6 +2665,33 @@ async function googleData(mainCat, conds, bbox) {
     googleTerm(mainCat.label, bbox, G_FIELDS_MAIN, false), // Hauptsuche: Top 60 nach Relevanz
     ...gConds.map(term),
   ]);
+  // Hat die Hauptsuche das 60er-Limit erreicht und liefert eine Bedingung nur wenige Orte
+  // (z. B. ein bestimmtes Theater), zusätzlich direkt um diese Orte suchen – sonst fehlen nahe
+  // Treffer, die nicht unter Googles Top 60 für das ganze Gebiet sind.
+  if (m.capped) {
+    let best = -1;
+    gs.forEach((g, i) => {
+      const n = g.points.length;
+      if (n >= 1 && n <= ANCHOR_MAX && (best < 0 || n < gs[best].points.length)) best = i;
+    });
+    const left = activeSource === 'cloud' && account ? account.limit - account.used : Infinity;
+    // Reserve für Bedingungen, die bei fehlender Datenbank-Abdeckung doch zu Google gehen
+    const reserve = conds.filter((c, i) => viaDb[i]).length * (split ? 15 : 3);
+    if (best >= 0 && left >= 3 * gs[best].points.length + reserve) {
+      const r = gConds[best].radius;
+      const rects = gs[best].points.map(p => {
+        const a = expandBbox({ s: p.lat, n: p.lat, w: p.lon, e: p.lon }, r);
+        return { s: Math.max(a.s, bbox.s), n: Math.min(a.n, bbox.n), w: Math.max(a.w, bbox.w), e: Math.min(a.e, bbox.e) };
+      }).filter(q => q.n > q.s && q.e > q.w);
+      // Nur eine Ergänzung: schlägt eine Abfrage fehl, bleibt es bei den bisherigen Treffern.
+      const near = await Promise.allSettled(rects.map(q => googleArea(mainCat.label, q, G_FIELDS_MAIN)));
+      const ok = near.filter(n => n.status === 'fulfilled').map(n => n.value);
+      const byId = new Map([...m.points, ...ok.flat()].map(p => [p.id, p]));
+      m.points = [...byId.values()];
+      // Die Umgebung der Bedingung ist jetzt vollständig, wenn alle Abfragen geklappt haben
+      if (ok.length === near.length) m.capped = ok.some(n => n.length >= G_MAX);
+    }
+  }
   const dbConds = conds.filter((c, i) => viaDb[i]);
   let db = await dbPools(m.points, dbConds);
   const extra = []; // Datenbank deckt das Gebiet nicht ab: diese Bedingungen doch bei Google
