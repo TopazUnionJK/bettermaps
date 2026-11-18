@@ -795,12 +795,14 @@ async function googleData(mainCat, conds, bbox) {
         return { s: Math.max(a.s, bbox.s), n: Math.min(a.n, bbox.n), w: Math.max(a.w, bbox.w), e: Math.min(a.e, bbox.e) };
       }).filter(q => q.n > q.s && q.e > q.w);
       // Nur eine Ergänzung: schlägt eine Abfrage fehl, bleibt es bei den bisherigen Treffern.
-      const near = await Promise.allSettled(rects.map(q => googleArea(mainCat.label, q, G_FIELDS_MAIN)));
+      // In dichten Innenstädten erreicht auch die Umgebung das 60er-Limit: dann vierteln, wenn das Kontingent reicht.
+      const splitNear = left >= 15 * rects.length + reserve;
+      const near = await Promise.allSettled(rects.map(q => googleTerm(mainCat.label, q, G_FIELDS_MAIN, splitNear)));
       const ok = near.filter(n => n.status === 'fulfilled').map(n => n.value);
-      const byId = new Map([...m.points, ...ok.flat()].map(p => [p.id, p]));
+      const byId = new Map([...m.points, ...ok.flatMap(n => n.points)].map(p => [p.id, p]));
       m.points = [...byId.values()];
       // Die Umgebung der Bedingung ist jetzt vollständig, wenn alle Abfragen geklappt haben
-      if (ok.length === near.length) m.capped = ok.some(n => n.length >= G_MAX);
+      if (ok.length === near.length) m.capped = ok.some(n => n.capped);
     }
   }
   const dbConds = conds.filter((c, i) => viaDb[i]);
