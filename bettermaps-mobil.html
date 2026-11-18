@@ -1002,6 +1002,10 @@ footer { color: var(--faint); font-size: 12px; padding-top: 8px; }
 .pin-icon { background: none; border: 0; }
 .pin-icon svg { display: block; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .45)); }
 
+/* Popup für eine angeklickte Stelle der Karte */
+.spot-pop .r-sub { margin-top: 4px; }
+.spot-pop a { display: inline-block; margin-top: 8px; font-weight: 600; }
+
 </style>
 </head>
 <body>
@@ -3356,7 +3360,7 @@ async function runSearch(useMapView, { osm = '' } = {}) {
           const next = await data.more.load();
           if (current !== mine) return; // inzwischen neu gesucht
           const r = evaluate(next);
-          current = { ...current, results: r.results, note: cleanNote(next.note), more: data.more.cost() ? more : null };
+          current = { ...current, results: r.results, pools: next.pools, note: cleanNote(next.note), more: data.more.cost() ? more : null };
           render(r.total, where, { keepView: true });
         } finally {
           setBusy(false);
@@ -3369,7 +3373,7 @@ async function runSearch(useMapView, { osm = '' } = {}) {
       return { results: matchResults(mains, d.pools, conds, me), total: mains.length };
     };
     const { results, total } = evaluate(data);
-    current = { results, conds, mainCat, source, note, me, more: more && more.cost() ? more : null };
+    current = { results, pools: data.pools, conds, mainCat, source, note, me, more: more && more.cost() ? more : null };
     collapseForm(`${mainCat.label} ${where}` + (conds.length ? ` · ${conds.map(c => c.label).join(', ')}` : ''));
     render(total, where);
   } catch (err) {
@@ -3496,7 +3500,7 @@ function render(totalMain, where, { keepView = false } = {}) {
     const key = i + '|' + p.id;
     if (seen.has(key)) return;
     seen.add(key);
-    L.circleMarker([p.lat, p.lon], { radius: 5, color: '#fff', weight: 1.5, fillColor: conds[i].color, fillOpacity: 1 })
+    L.circleMarker([p.lat, p.lon], { radius: 5, color: '#fff', weight: 1.5, fillColor: conds[i].color, fillOpacity: 1, bubblingMouseEvents: false })
       .bindTooltip(conds[i].label + (p.tags.name ? ': ' + p.tags.name : ''))
       .addTo(poiLayer);
   })));
@@ -3509,7 +3513,7 @@ function render(totalMain, where, { keepView = false } = {}) {
     setSheet('half', { sync: true });
   }
   results.forEach((r, idx) => {
-    r.marker = L.circleMarker([r.lat, r.lon], { radius: 9, color: '#fff', weight: 2, fillColor: MAIN_COLOR, fillOpacity: 1 })
+    r.marker = L.circleMarker([r.lat, r.lon], { radius: 9, color: '#fff', weight: 2, fillColor: MAIN_COLOR, fillOpacity: 1, bubblingMouseEvents: false })
       .on('click', () => select(idx, false))
       .addTo(resultLayer);
 
@@ -3581,6 +3585,31 @@ function select(idx, fromList) {
     requestAnimationFrame(() => r.li.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   }
 }
+
+// Klick auf eine freie Stelle der Karte (z. B. ein Google-Symbol, das nicht in der Liste ist):
+// Entfernungen zu den Bedingungs-Orten der aktuellen Suche und ein Google-Maps-Link – ohne Abfrage.
+map.on('click', e => {
+  const { conds, pools } = current;
+  if (!conds?.length || !pools) return;
+  const here = { lat: e.latlng.lat, lon: e.latlng.lng };
+  const box = el('div', { className: 'spot-pop' }, el('div', { className: 'r-name', textContent: t('Diese Stelle', 'This spot') }));
+  conds.forEach((c, i) => {
+    let best = null;
+    for (const p of pools[i] || []) {
+      const d = haversine(here, p);
+      if (!best || d < best.d) best = { p, d };
+    }
+    const ok = best && best.d <= c.radius;
+    box.append(el('div', { className: 'r-sub' },
+      el('span', { className: 'dot', style: { background: c.color, width: '9px', height: '9px', marginRight: '6px' } }),
+      best
+        ? `${c.label}: ${fmtDist(best.d)}` + (best.p.tags.name ? ` (${best.p.tags.name})` : '') + (ok ? ' ✓' : t(` – mehr als ${fmtRadius(c.radius)}`, ` – more than ${fmtRadius(c.radius)}`))
+        : t(`${c.label}: keiner gefunden`, `${c.label}: none found`)));
+  });
+  box.append(el('a', { href: `https://www.google.com/maps/search/?api=1&query=${here.lat.toFixed(6)},${here.lon.toFixed(6)}`,
+    target: '_blank', rel: 'noopener', textContent: t('In Google Maps ansehen', 'View in Google Maps') }));
+  L.popup({ maxWidth: 280 }).setLatLng(e.latlng).setContent(box).openOn(map);
+});
 
 // ---------- Events ----------
 $('#form').addEventListener('submit', e => { e.preventDefault(); runSearch(false); });
