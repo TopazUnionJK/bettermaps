@@ -469,10 +469,13 @@ Deno.serve(async (req) => {
       if (!PLACES_KEY) return json(req, { error: 'Google-Schlüssel ist im Backend noch nicht hinterlegt.' }, 503);
       const b = await req.json().catch(() => null);
       const fields = typeof b?.fields === 'string' && Object.hasOwn(FIELDS, b.fields) ? FIELDS[b.fields] : null;
-      const r = b?.rect;
+      // Gebiet: Rechteck (fest begrenzt, nach Relevanz) oder Kreis um einen Ort (nach Entfernung sortiert)
+      const r = b?.rect, c = b?.circle;
       const text = typeof b?.textQuery === 'string' ? b.textQuery.trim().slice(0, 100) : '';
-      if (!fields || !text || !r || !num(r.s, -90, 90) || !num(r.n, -90, 90) || !num(r.w, -180, 180) || !num(r.e, -180, 180)
-        || r.n <= r.s || r.e <= r.w || !smallEnough(r)) {
+      const rectOk = r && num(r.s, -90, 90) && num(r.n, -90, 90) && num(r.w, -180, 180) && num(r.e, -180, 180)
+        && r.n > r.s && r.e > r.w && smallEnough(r);
+      const circleOk = !r && c && num(c.lat, -90, 90) && num(c.lon, -180, 180) && num(c.r, 1, 50000);
+      if (!fields || !text || !(rectOk || circleOk)) {
         return json(req, { error: tr(req, 'Ungültige Anfrage.', 'Invalid request.') }, 400);
       }
       if (b.pageToken != null && (typeof b.pageToken !== 'string' || b.pageToken.length > 2000)) {
@@ -489,7 +492,9 @@ Deno.serve(async (req) => {
 
       const body: Record<string, unknown> = {
         textQuery: text, languageCode: langOf(req), regionCode: 'DE', pageSize: 20,
-        locationRestriction: { rectangle: { low: { latitude: r.s, longitude: r.w }, high: { latitude: r.n, longitude: r.e } } },
+        ...(rectOk
+          ? { locationRestriction: { rectangle: { low: { latitude: r.s, longitude: r.w }, high: { latitude: r.n, longitude: r.e } } } }
+          : { locationBias: { circle: { center: { latitude: c.lat, longitude: c.lon }, radius: c.r } }, rankPreference: 'DISTANCE' }),
       };
       if (b.pageToken) body.pageToken = b.pageToken;
 

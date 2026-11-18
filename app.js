@@ -619,8 +619,9 @@ function googlePoint(p) {
 async function googleFetch(text, b, fields, pageToken) {
   for (let attempt = 0; ; attempt++) {
     let res, json;
+    const circle = b.r != null; // Kreis um einen Ort: nach Entfernung sortiert
     if (activeSource === 'cloud') {
-      ({ res, json } = await api('/search', { textQuery: text, rect: b, fields: fields === G_FIELDS_MAIN ? 'main' : 'near', pageToken }));
+      ({ res, json } = await api('/search', { textQuery: text, ...(circle ? { circle: b } : { rect: b }), fields: fields === G_FIELDS_MAIN ? 'main' : 'near', pageToken }));
       if (json.quota && account) { account.used = json.quota.used; account.limit = json.quota.limit; renderAccount(); }
       if (res.status === 401) throw new Error(t('Deine Anmeldung ist abgelaufen – bitte unten unter „Konto“ neu anmelden.', 'Your session has expired – please sign in again below under “Account”.'));
       if (res.status === 403 && json.status) {
@@ -635,7 +636,9 @@ async function googleFetch(text, b, fields, pageToken) {
     } else {
       const body = {
         textQuery: text, languageCode: t('de', 'en'), regionCode: 'DE', pageSize: 20,
-        locationRestriction: { rectangle: { low: { latitude: b.s, longitude: b.w }, high: { latitude: b.n, longitude: b.e } } },
+        ...(circle
+          ? { locationBias: { circle: { center: { latitude: b.lat, longitude: b.lon }, radius: b.r } }, rankPreference: 'DISTANCE' }
+          : { locationRestriction: { rectangle: { low: { latitude: b.s, longitude: b.w }, high: { latitude: b.n, longitude: b.e } } } }),
         ...(pageToken ? { pageToken } : {}),
       };
       res = await fetch(G_URL, {
@@ -671,6 +674,26 @@ async function googleArea(text, b, fields) {
   gCache.set(ck, { t: Date.now(), d: points });
   return points;
 }
+// Eine Seite (20) im Kreis um einen Ort, nach Entfernung sortiert; liefert auch den Token der nächsten Seite.
+async function googleNearestPage(text, c, pageToken) {
+  const ck = ['near', text.toLowerCase(), c.lat.toFixed(5), c.lon.toFixed(5), c.r, pageToken || ''].join('|');
+  const hit = gCache.get(ck);
+  // Kurz zwischenspeichern: Googles Token für die nächste Seite läuft nach wenigen Minuten ab.
+  // Gleichzeitige gleiche Abfragen teilen sich die laufende Anfrage.
+  if (hit && (hit.p || Date.now() - hit.t < NEAR_TTL)) return hit.p || hit.d;
+  const p = googleFetch(text, c, G_FIELDS_MAIN, pageToken)
+    .then(json => ({ points: (json.places || []).map(googlePoint).filter(Boolean), next: json.nextPageToken }));
+  gCache.set(ck, { p });
+  try {
+    const d = await p;
+    gCache.set(ck, { t: Date.now(), d });
+    return d;
+  } catch (err) {
+    gCache.delete(ck);
+    throw err;
+  }
+}
+const NEAR_TTL = 2 * 60 * 1000;
 // Alte, dauerhaft gespeicherte Google-Ergebnisse früherer Versionen entfernen
 try { Object.keys(localStorage).filter(k => k.startsWith(CACHE_PREFIX + 'g')).forEach(k => localStorage.removeItem(k)); } catch { /* egal */ }
 
@@ -772,54 +795,92 @@ async function googleData(mainCat, conds, bbox) {
   };
   const split = checkQuota(gConds.length);
   const term = c => googleTerm(c.label, expandBbox(bbox, c.radius), G_FIELDS_NEAR, split);
-  const [m, ...gs] = await Promise.all([
-    googleTerm(mainCat.label, bbox, G_FIELDS_MAIN, false), // Hauptsuche: Top 60 nach Relevanz
-    ...gConds.map(term),
-  ]);
-  // Hat die Hauptsuche das 60er-Limit erreicht und liefert eine Bedingung nur wenige Orte
-  // (z. B. ein bestimmtes Theater), zusätzlich direkt um diese Orte suchen – sonst fehlen nahe
-  // Treffer, die nicht unter Googles Top 60 für das ganze Gebiet sind.
-  if (m.capped) {
-    let best = -1;
-    gs.forEach((g, i) => {
-      const n = g.points.length;
-      if (n >= 1 && n <= ANCHOR_MAX && (best < 0 || n < gs[best].points.length)) best = i;
-    });
-    const left = activeSource === 'cloud' && account ? account.limit - account.used : Infinity;
-    // Reserve für Bedingungen, die bei fehlender Datenbank-Abdeckung doch zu Google gehen
-    const reserve = conds.filter((c, i) => viaDb[i]).length * (split ? 15 : 3);
-    if (best >= 0 && left >= 3 * gs[best].points.length + reserve) {
-      const r = gConds[best].radius;
-      const rects = gs[best].points.map(p => {
-        const a = expandBbox({ s: p.lat, n: p.lat, w: p.lon, e: p.lon }, r);
-        return { s: Math.max(a.s, bbox.s), n: Math.min(a.n, bbox.n), w: Math.max(a.w, bbox.w), e: Math.min(a.e, bbox.e) };
-      }).filter(q => q.n > q.s && q.e > q.w);
-      // Nur eine Ergänzung: schlägt eine Abfrage fehl, bleibt es bei den bisherigen Treffern.
-      const near = await Promise.allSettled(rects.map(q => googleArea(mainCat.label, q, G_FIELDS_MAIN)));
-      const ok = near.filter(n => n.status === 'fulfilled').map(n => n.value);
-      const byId = new Map([...m.points, ...ok.flat()].map(p => [p.id, p]));
-      m.points = [...byId.values()];
-      // Die Umgebung der Bedingung ist jetzt vollständig, wenn alle Abfragen geklappt haben
-      if (ok.length === near.length) m.capped = ok.some(n => n.length >= G_MAX);
+  // Freitext-Bedingungen zuerst: liefert eine davon nur wenige Orte (z. B. ein bestimmtes Theater),
+  // wird die Hauptsuche nur um diese Orte gemacht – je Ort die 20 nächsten, nach Entfernung sortiert.
+  // Andere Treffer könnten die Bedingung ohnehin nicht erfüllen; das spart Abfragen und findet nahe
+  // Orte, die in Googles Top 60 für die ganze Stadt fehlen würden.
+  const gs = await Promise.all(gConds.map(term));
+  let best = -1;
+  gs.forEach((g, i) => {
+    const n = g.points.length;
+    if (n >= 1 && n <= ANCHOR_MAX && (best < 0 || n < gs[best].points.length)) best = i;
+  });
+  let m = null, more = null, nearNote = '';
+  // Gleiche Orte (z. B. Theater und seine Kasse) nur einmal abfragen
+  const anchorPts = best < 0 ? [] : [...new Map(gs[best].points.map(p => [p.lat.toFixed(4) + ',' + p.lon.toFixed(4), p])).values()];
+  const left = activeSource === 'cloud' && account ? account.limit - account.used : Infinity;
+  // Reserve für Bedingungen, die bei fehlender Datenbank-Abdeckung doch zu Google gehen
+  const reserve = conds.filter((c, i) => viaDb[i]).length * (split ? 15 : 3);
+  if (anchorPts.length && left >= anchorPts.length + reserve) {
+    const r = gConds[best].radius;
+    const anchors = anchorPts.map(p => ({ c: { lat: p.lat, lon: p.lon, r }, token: undefined, done: false }));
+    const found = new Map();
+    let failed = false;
+    const page = async () => {
+      const open = anchors.filter(a => !a.done);
+      const pages = await Promise.allSettled(open.map(a => googleNearestPage(mainCat.label, a.c, a.token)));
+      pages.forEach((res, i) => {
+        const a = open[i];
+        if (res.status === 'rejected') { a.done = true; failed = true; return; } // einzelner Fehler: Rest zeigen
+        const { points, next } = res.value;
+        // Nur Orte im Umkreis und im Suchgebiet (Google bevorzugt den Kreis nur, begrenzt nicht)
+        points.filter(p => haversine(a.c, p) <= r && inBbox(p, bbox)).forEach(p => found.set(p.id, p));
+        a.token = next;
+        // Weitere Seite nur sinnvoll, wenn auch der entfernteste Treffer noch im Umkreis liegt
+        a.done = !next || !points.length || haversine(a.c, points[points.length - 1]) > r;
+      });
+      if (pages.every(res => res.status === 'rejected')) throw pages[0].reason;
+      return [...found.values()];
+    };
+    try {
+      m = { points: await page(), capped: false };
+    } catch (err) {
+      if (err.quota) throw err;
+      m = null; // um die Orte herum ging nichts: wie bisher im ganzen Gebiet suchen
+    }
+    if (m) {
+      const openCount = () => anchors.filter(a => !a.done).length;
+      const moreNote = () => [
+        openCount() ? t(`Gezeigt werden die nächstgelegenen „${mainCat.label}“ um „${gConds[best].label}“ – es gibt evtl. weitere.`,
+          `Showing the nearest “${mainCat.label}” around “${gConds[best].label}” – there may be more.`) : '',
+        failed ? t('Ein Teil der Google-Abfragen ist fehlgeschlagen – evtl. fehlen Treffer.', 'Some Google queries failed – some results may be missing.') : '',
+      ].filter(Boolean).join(' ');
+      nearNote = moreNote();
+      if (openCount()) {
+        more = {
+          cost: openCount,
+          load: async () => {
+            const points = await page();
+            return { ...await finish(points), note: [moreNote(), baseNote].filter(Boolean).join(' ') };
+          },
+        };
+      }
     }
   }
+  if (!m) m = await googleTerm(mainCat.label, bbox, G_FIELDS_MAIN, false); // Hauptsuche: Top 60 nach Relevanz
   const dbConds = conds.filter((c, i) => viaDb[i]);
-  let db = await dbPools(m.points, dbConds);
+  // Pools der Bedingungen zu den Haupttreffern; bei „Weitere laden“ erneut (Datenbank kostet nichts,
+  // Google-Ergebnisse kommen aus dem Zwischenspeicher).
   const extra = []; // Datenbank deckt das Gebiet nicht ab: diese Bedingungen doch bei Google
-  if (!db) {
-    extra.push(...await Promise.all(dbConds.map(term)));
-    db = extra.map(g => g.points);
+  async function finish(mainPoints) {
+    let db = await dbPools(mainPoints, dbConds);
+    if (!db) {
+      extra.length = 0;
+      extra.push(...await Promise.all(dbConds.map(term)));
+      db = extra.map(g => g.points);
+    }
+    const gPools = gs.map(g => g.points);
+    const pools = conds.map((c, i) => (viaDb[i] ? db : gPools).shift());
+    return { mains: mainPoints, pools, dbCapped: db.capped || [] };
   }
-  const gPools = gs.map(g => g.points);
-  const dbCapped = db.capped || [];
-  const pools = conds.map((c, i) => (viaDb[i] ? db : gPools).shift());
+  const res = await finish(m.points);
   const capped = [[m, mainCat], ...gs.map((g, i) => [g, gConds[i]]), ...extra.map((g, i) => [g, dbConds[i]])]
     .filter(([r]) => r.capped).map(([, c]) => c.label);
-  const note = [capped.length
+  const baseNote = [capped.length
     ? t(`Google liefert pro Suchbegriff höchstens ${G_MAX} Orte – bei ${capped.map(l => `„${l}“`).join(', ')} fehlen evtl. welche. Vollständiger, aber langsamer: OpenStreetMap.`,
       `Google returns at most ${G_MAX} places per search term – some may be missing for ${capped.map(l => `“${l}”`).join(', ')}. More complete but slower: OpenStreetMap.`)
-    : '', cappedNote(dbCapped)].filter(Boolean).join(' ');
-  return { mains: m.points, pools, note };
+    : '', cappedNote(res.dbCapped)].filter(Boolean).join(' ');
+  return { mains: res.mains, pools: res.pools, note: [nearNote, baseNote].filter(Boolean).join(' '), more };
 }
 
 async function overpassPoints(mainCat, conds, bbox) {
@@ -1377,7 +1438,7 @@ async function runSearch(useMapView, { osm = '' } = {}) {
     if (source === 'cloud') {
       setLoading(t('Suche bei Google …', 'Searching Google …'));
       data = await googleData(mainCat, conds, bbox);
-      note = data.note.replace(/ (Vollständiger, aber langsamer|More complete but slower): OpenStreetMap\./, '');
+      note = stripOsmHint(data.note);
       source = 'google';
     } else if (source === 'google') {
       setLoading(t('Suche bei Google …', 'Searching Google …'));
@@ -1394,10 +1455,52 @@ async function runSearch(useMapView, { osm = '' } = {}) {
       if (data.note) note = [note, data.note].filter(Boolean).join(' ');
     }
 
-    const mains = data.mains.filter(p => inBbox(p, bbox) && (!polygons || inPolygons(p, polygons)) &&
-      (!me || haversine(me, p) <= NEAR_ME_M)); // um mich herum: echter Kreis statt Rechteck
-    const pools = data.pools;
+    // „Weitere laden“ (nur Google-Suche um wenige Orte): nächste Seite holen und neu auswerten
+    const searchSource = activeSource, cleanNote = n => (searchSource === 'cloud' ? stripOsmHint(n) : n);
+    const more = data.more && {
+      cost: data.more.cost,
+      load: async () => {
+        const mine = current;
+        activeSource = searchSource;
+        setBusy(true);
+        try {
+          const next = await data.more.load();
+          if (current !== mine) return; // inzwischen neu gesucht
+          const r = evaluate(next);
+          current = { ...current, results: r.results, note: cleanNote(next.note), more: data.more.cost() ? more : null };
+          render(r.total, where, { keepView: true });
+        } finally {
+          setBusy(false);
+        }
+      },
+    };
+    const evaluate = d => {
+      const mains = d.mains.filter(p => inBbox(p, bbox) && (!polygons || inPolygons(p, polygons)) &&
+        (!me || haversine(me, p) <= NEAR_ME_M)); // um mich herum: echter Kreis statt Rechteck
+      return { results: matchResults(mains, d.pools, conds, me), total: mains.length };
+    };
+    const { results, total } = evaluate(data);
+    current = { results, conds, mainCat, source, note, me, more: more && more.cost() ? more : null };
+    collapseForm(`${mainCat.label} ${where}` + (conds.length ? ` · ${conds.map(c => c.label).join(', ')}` : ''));
+    render(total, where);
+  } catch (err) {
+    resultLayer.clearLayers(); poiLayer.clearLayers(); highlightLayer.clearLayers();
+    $('#results').replaceChildren();
+    expandForm();
+    setStatus(err.quota
+      ? [err.message, ' ', el('button', { type: 'button', className: 'ghost osm-retry', textContent: t('Mit OpenStreetMap weitersuchen', 'Continue with OpenStreetMap'),
+          onclick: () => runSearch(useMapView, { osm: err.quota }) })]
+      : err.message || String(err), true);
+  } finally {
+    setBusy(false);
+  }
+}
 
+// Über das Backend gibt es keinen OSM-Hinweis im Google-Text (OSM ist dort eine eigene Umschaltung)
+const stripOsmHint = n => n.replace(/ (Vollständiger, aber langsamer|More complete but slower): OpenStreetMap\./, '');
+
+// Haupttreffer, die alle Bedingungen erfüllen, mit den nächsten Orten je Bedingung
+function matchResults(mains, pools, conds, me) {
     const results = [];
     for (const m of mains) {
       const near = [];
@@ -1421,21 +1524,7 @@ async function runSearch(useMapView, { osm = '' } = {}) {
     } else {
       results.sort((a, b) => a.score - b.score || (a.tags.name || '').localeCompare(b.tags.name || ''));
     }
-
-    current = { results, conds, mainCat, source, note, me };
-    collapseForm(`${mainCat.label} ${where}` + (conds.length ? ` · ${conds.map(c => c.label).join(', ')}` : ''));
-    render(mains.length, where);
-  } catch (err) {
-    resultLayer.clearLayers(); poiLayer.clearLayers(); highlightLayer.clearLayers();
-    $('#results').replaceChildren();
-    expandForm();
-    setStatus(err.quota
-      ? [err.message, ' ', el('button', { type: 'button', className: 'ghost osm-retry', textContent: t('Mit OpenStreetMap weitersuchen', 'Continue with OpenStreetMap'),
-          onclick: () => runSearch(useMapView, { osm: err.quota }) })]
-      : err.message || String(err), true);
-  } finally {
-    setBusy(false);
-  }
+    return results;
 }
 
 // ---------- Darstellung ----------
@@ -1482,7 +1571,7 @@ function detailsContent(r) {
   return box;
 }
 
-function render(totalMain, where) {
+function render(totalMain, where, { keepView = false } = {}) {
   const { results, conds, mainCat } = current;
   resultLayer.clearLayers(); poiLayer.clearLayers(); highlightLayer.clearLayers();
 
@@ -1493,6 +1582,20 @@ function render(totalMain, where) {
     ` × ${mainCat.label} ${where} ` + t(results.length === 1 ? 'erfüllt alle Bedingungen.' : 'erfüllen alle Bedingungen.', results.length === 1 ? 'meets all conditions.' : 'meet all conditions.')]);
 
   if (current.note) $('#status').append(el('div', { className: 'r-sub', textContent: current.note }));
+  if (current.more) {
+    const n = current.more.cost();
+    const btn = el('button', { type: 'button', className: 'ghost osm-retry',
+      textContent: t(`Weitere laden (${n} Google-${n === 1 ? 'Abfrage' : 'Abfragen'})`, `Load more (${n} Google ${n === 1 ? 'query' : 'queries'})`),
+      onclick: async () => {
+        btn.disabled = true;
+        btn.textContent = t('Lade …', 'Loading …');
+        try { await current.more.load(); } catch (err) {
+          btn.remove();
+          $('#status').append(el('div', { className: 'r-sub error', textContent: err.message || String(err) }));
+        }
+      } });
+    $('#status').append(btn);
+  }
   const fuzzy = current.source === 'osm' ? [mainCat, ...conds].filter(c => c.fuzzy).map(c => t(`„${c.label}“`, `“${c.label}”`)) : [];
   if (fuzzy.length) {
     $('#status').append(el('div', { className: 'r-sub', textContent: t(`${fuzzy.join(', ')} kenne ich nicht als Kategorie – gesucht wurde in Namen, Marken und Stichworten.`, `${fuzzy.join(', ')} is not a known category – searched names, brands and keywords.`) }));
@@ -1512,8 +1615,10 @@ function render(totalMain, where) {
   const list = $('#results');
   list.replaceChildren();
   // Handy: Blatt auf die mittlere Stufe, damit Karte und erste Treffer zusammen sichtbar sind
-  sheetBody.scrollTop = 0;
-  setSheet('half', { sync: true });
+  if (!keepView) {
+    sheetBody.scrollTop = 0;
+    setSheet('half', { sync: true });
+  }
   results.forEach((r, idx) => {
     r.marker = L.circleMarker([r.lat, r.lon], { radius: 9, color: '#fff', weight: 2, fillColor: MAIN_COLOR, fillOpacity: 1 })
       .on('click', () => select(idx, false))
@@ -1532,7 +1637,7 @@ function render(totalMain, where) {
     list.append(r.li);
   });
 
-  if (results.length) {
+  if (results.length && !keepView) {
     const pts = results.map(r => [r.lat, r.lon]);
     if (current.me) pts.push([current.me.lat, current.me.lon]); // eigenen Standort mit ins Bild
     map.fitBounds(L.latLngBounds(pts).pad(0.15), { maxZoom: 16 });
