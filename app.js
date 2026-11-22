@@ -1556,6 +1556,13 @@ function nearLine(p, d, c) {
     info ? el('span', { className: 'near-info', textContent: ' · ' + info }) : null);
 }
 
+// Bedingungs-Ort als kleiner farbiger Punkt auf der Karte
+function poiMarker(p, c) {
+  L.circleMarker([p.lat, p.lon], { radius: 5, color: '#fff', weight: 1.5, fillColor: c.color, fillOpacity: 1, bubblingMouseEvents: false })
+    .bindTooltip(() => c.label + (p.tags.name ? ': ' + p.tags.name : '') + (ratingText(p.tags) ? ' · ' + ratingText(p.tags) : ''))
+    .addTo(poiLayer);
+}
+
 function nearSection(r, i) {
   const hits = r.near[i], c = current.conds[i];
   const sec = el('div', { className: 'near-sec' }, el('div', { className: 'near-head' },
@@ -1617,6 +1624,9 @@ async function loadGoogleNear(r, i) {
   const extra = points.filter(q => !used.has(q.id) && !r.near[i].some(h => h.p.id === q.id))
     .map(q => ({ p: q, d: haversine(r, q) })).filter(h => h.d <= c.radius).sort((a, b) => a.d - b.d);
   (r.gNear ||= [])[i] = { extra };
+  const shown = new Set(); // auch auf der Karte zeigen (ein Ort kann bei mehreren Treffern auftauchen)
+  poiLayer.eachLayer(m => shown.add(m.getLatLng().lat.toFixed(6) + ',' + m.getLatLng().lng.toFixed(6)));
+  extra.forEach(({ p }) => { if (!shown.has(p.lat.toFixed(6) + ',' + p.lon.toFixed(6))) poiMarker(p, c); });
 }
 
 // Zusatzinfos, die unter dem ausgewählten Treffer in der Liste aufklappen
@@ -1680,9 +1690,7 @@ function render(totalMain, where, { keepView = false } = {}) {
     const key = i + '|' + p.id;
     if (seen.has(key)) return;
     seen.add(key);
-    L.circleMarker([p.lat, p.lon], { radius: 5, color: '#fff', weight: 1.5, fillColor: conds[i].color, fillOpacity: 1, bubblingMouseEvents: false })
-      .bindTooltip(conds[i].label + (p.tags.name ? ': ' + p.tags.name : '') + (ratingText(p.tags) ? ' · ' + ratingText(p.tags) : ''))
-      .addTo(poiLayer);
+    poiMarker(p, conds[i]);
   })));
 
   const list = $('#results');
