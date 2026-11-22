@@ -585,7 +585,9 @@ renderSourceToggle();
 const G_URL = 'https://places.googleapis.com/v1/places:searchText';
 const G_FIELDS_MAIN = 'places.id,places.displayName,places.location,places.formattedAddress,places.primaryTypeDisplayName,' +
   'places.rating,places.userRatingCount,places.websiteUri,places.googleMapsUri,places.currentOpeningHours.openNow,nextPageToken';
-const G_FIELDS_NEAR = 'places.id,places.displayName,places.location,nextPageToken'; // günstiger: nur Name + Lage
+// Bedingungs-Orte mit denselben Zusatzinfos (Bewertung, geöffnet …), damit man zwischen Treffern abwägen kann.
+// Zählt gleich wie eine Hauptsuche (1 Abfrage je Seite), Google berechnet etwas mehr pro Abfrage.
+const G_FIELDS_NEAR = G_FIELDS_MAIN;
 const G_MAX = 60;
 const ANCHOR_MAX = 5; // so wenige Orte hat eine Bedingung höchstens, damit zusätzlich um sie herum gesucht wird
 
@@ -1541,18 +1543,38 @@ function address(tags) {
 
 const ratingText = g => (g.rating ? `★ ${g.rating.toFixed(1).replace('.', t(',', '.'))}${g.ratings ? ` (${g.ratings})` : ''}` : '');
 
+const NEAR_SHOWN = 3;
+// Ein Bedingungs-Ort in den Zusatzinfos: Entfernung, Name (Link zu Google Maps), Art, Bewertung, geöffnet
+function nearLine(p, d, c) {
+  const tg = p.tags || {};
+  const name = tg.name || tg.brand || c.label;
+  const gq = tg.name ? `${tg.name}, ${address(tg) || `${p.lat},${p.lon}`}` : `${p.lat},${p.lon}`;
+  const href = tg.gmaps || 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(gq);
+  const info = [tg.kind, ratingText(tg), tg.openNow != null && (tg.openNow ? t('jetzt geöffnet', 'open now') : t('jetzt geschlossen', 'closed now'))].filter(Boolean).join(' · ');
+  return el('div', { className: 'near-line' },
+    `${fmtDist(d)} · `, el('a', { href, target: '_blank', rel: 'noopener', textContent: name }),
+    info ? el('span', { className: 'near-info', textContent: ' · ' + info }) : null);
+}
+
 // Zusatzinfos, die unter dem ausgewählten Treffer in der Liste aufklappen
 function detailsContent(r) {
   const tg = r.tags;
   const box = el('div', { className: 'r-details' });
   if (tg.opening_hours) box.append(el('div', { textContent: '🕑 ' + tg.opening_hours }));
   if (tg.openNow != null) box.append(el('div', { textContent: tg.openNow ? t('🕑 Jetzt geöffnet', '🕑 Open now') : t('🕑 Jetzt geschlossen', '🕑 Closed now') }));
+  // Je Bedingung die nächsten Orte mit ihren Zusatzinfos, damit man abwägen kann
   r.near.forEach((hits, i) => {
     const c = current.conds[i];
-    const name = hits[0].p.tags?.name || hits[0].p.tags?.brand;
-    box.append(el('div', {},
+    const sec = el('div', { className: 'near-sec' }, el('div', { className: 'near-head' },
       el('span', { className: 'dot', style: { background: c.color, width: '9px', height: '9px', marginRight: '5px' } }),
-      `${c.label}: ${fmtDist(hits[0].d)}` + (name ? ` – ${name}` : '') + (hits.length > 1 ? t(` (${hits.length} im Umkreis)`, ` (${hits.length} nearby)`) : '')));
+      c.label + (hits.length > 1 ? t(` (${hits.length} im Umkreis)`, ` (${hits.length} nearby)`) : '')));
+    hits.slice(0, NEAR_SHOWN).forEach(({ p, d }) => sec.append(nearLine(p, d, c)));
+    if (hits.length > NEAR_SHOWN) {
+      const more = el('button', { type: 'button', className: 'link-btn', textContent: t(`+ ${hits.length - NEAR_SHOWN} weitere`, `+ ${hits.length - NEAR_SHOWN} more`),
+        onclick: e => { e.stopPropagation(); more.replaceWith(...hits.slice(NEAR_SHOWN).map(({ p, d }) => nearLine(p, d, c))); } });
+      sec.append(more);
+    }
+    box.append(sec);
   });
   const phone = tg.phone || tg['contact:phone'];
   const links = el('div', { className: 'links' });
@@ -1608,7 +1630,7 @@ function render(totalMain, where, { keepView = false } = {}) {
     if (seen.has(key)) return;
     seen.add(key);
     L.circleMarker([p.lat, p.lon], { radius: 5, color: '#fff', weight: 1.5, fillColor: conds[i].color, fillOpacity: 1, bubblingMouseEvents: false })
-      .bindTooltip(conds[i].label + (p.tags.name ? ': ' + p.tags.name : ''))
+      .bindTooltip(conds[i].label + (p.tags.name ? ': ' + p.tags.name : '') + (ratingText(p.tags) ? ' · ' + ratingText(p.tags) : ''))
       .addTo(poiLayer);
   })));
 

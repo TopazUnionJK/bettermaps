@@ -324,3 +324,11 @@ footer { color: var(--faint); font-size: 12px; padding-top: 8px; }
 /* Popup für eine angeklickte Stelle der Karte */
 .spot-pop .r-sub { margin-top: 4px; }
 .spot-pop a { display: inline-block; margin-top: 8px; font-weight: 600; }
+
+/* Bedingungs-Orte in den Zusatzinfos */
+.r-details .near-sec { margin-top: 8px; }
+.r-details .near-head { font-weight: 600; display: flex; align-items: center; }
+.r-details .near-line { margin: 2px 0 0 14px; }
+.r-details .near-line a { color: var(--accent); text-decoration: none; }
+.r-details .near-info { color: var(--muted); }
+.r-details .link-btn { margin: 2px 0 0 14px; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
