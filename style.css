@@ -332,3 +332,4 @@ footer { color: var(--faint); font-size: 12px; padding-top: 8px; }
 .r-details .near-line a { color: var(--accent); text-decoration: none; }
 .r-details .near-info { color: var(--muted); }
 .r-details .link-btn { margin: 2px 0 0 14px; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
+.r-details .near-line.error { color: var(--danger, #c0392b); }

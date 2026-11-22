@@ -1013,6 +1013,7 @@ footer { color: var(--faint); font-size: 12px; padding-top: 8px; }
 .r-details .near-line a { color: var(--accent); text-decoration: none; }
 .r-details .near-info { color: var(--muted); }
 .r-details .link-btn { margin: 2px 0 0 14px; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; }
+.r-details .near-line.error { color: var(--danger, #c0392b); }
 
 </style>
 </head>
@@ -3383,7 +3384,7 @@ async function runSearch(useMapView, { osm = '' } = {}) {
       return { results: matchResults(mains, d.pools, conds, me), total: mains.length };
     };
     const { results, total } = evaluate(data);
-    current = { results, pools: data.pools, conds, mainCat, source, note, me, more: more && more.cost() ? more : null };
+    current = { results, pools: data.pools, conds, mainCat, source, gSource: searchSource, note, me, more: more && more.cost() ? more : null };
     collapseForm(`${mainCat.label} ${where}` + (conds.length ? ` · ${conds.map(c => c.label).join(', ')}` : ''));
     render(total, where);
   } catch (err) {
@@ -3457,6 +3458,69 @@ function nearLine(p, d, c) {
     info ? el('span', { className: 'near-info', textContent: ' · ' + info }) : null);
 }
 
+function nearSection(r, i) {
+  const hits = r.near[i], c = current.conds[i];
+  const sec = el('div', { className: 'near-sec' }, el('div', { className: 'near-head' },
+    el('span', { className: 'dot', style: { background: c.color, width: '9px', height: '9px', marginRight: '5px' } }),
+    c.label + (hits.length > 1 ? t(` (${hits.length} im Umkreis)`, ` (${hits.length} nearby)`) : '')));
+  hits.slice(0, NEAR_SHOWN).forEach(({ p, d }) => sec.append(nearLine(p, d, c)));
+  if (hits.length > NEAR_SHOWN) {
+    const more = el('button', { type: 'button', className: 'link-btn', textContent: t(`+ ${hits.length - NEAR_SHOWN} weitere`, `+ ${hits.length - NEAR_SHOWN} more`),
+      onclick: e => { e.stopPropagation(); more.replaceWith(...hits.slice(NEAR_SHOWN).map(({ p, d }) => nearLine(p, d, c))); } }); // Knopf ist danach weg – sonst wählt die Zeile neu aus
+    sec.append(more);
+  }
+  // Orte aus der Datenbank (OpenStreetMap) haben keine Google-Bewertung: auf Wunsch mit einer Abfrage nachladen
+  const g = r.gNear?.[i];
+  if (g?.extra.length) {
+    sec.append(el('div', { className: 'near-line near-info', textContent: t('Nur bei Google:', 'Only on Google:') }));
+    g.extra.forEach(({ p, d }) => sec.append(nearLine(p, d, c)));
+  }
+  if (!g && current.source === 'google' && hits.some(h => !h.p.id.startsWith('g/'))) {
+    const btn = el('button', { type: 'button', className: 'link-btn', textContent: t('Google-Bewertungen laden (1 Abfrage)', 'Load Google ratings (1 query)'),
+      onclick: async e => {
+        e.stopPropagation();
+        btn.disabled = true;
+        btn.textContent = t('Lade …', 'Loading …');
+        try {
+          await loadGoogleNear(r, i);
+          sec.replaceWith(nearSection(r, i));
+        } catch (err) {
+          btn.replaceWith(el('div', { className: 'near-line error', textContent: err.message || String(err) }));
+        }
+      } });
+    sec.append(btn);
+  }
+  return sec;
+}
+
+// Eine Google-Seite (20 nächste) um den Treffer holen und den Datenbank-Orten Bewertung usw. zuordnen
+async function loadGoogleNear(r, i) {
+  const c = current.conds[i];
+  activeSource = current.gSource; // eigener Schlüssel oder Backend, wie bei der Suche
+  const { points } = await googleNearestPage(c.label, { lat: r.lat, lon: r.lon, r: c.radius });
+  const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9äöüß]+/g, '');
+  const used = new Set();
+  for (const { p } of r.near[i]) {
+    if (p.id.startsWith('g/') || p.tags.rating != null) continue;
+    const n = norm(p.tags.name || p.tags.brand);
+    let best = null;
+    for (const q of points) {
+      if (used.has(q.id)) continue;
+      const d = haversine(p, q), qn = norm(q.tags.name);
+      const named = n && qn && (qn.includes(n) || n.includes(qn));
+      if ((named && d < 120) || d < 25) if (!best || d < best.d) best = { q, d };
+    }
+    if (best) {
+      used.add(best.q.id);
+      const { rating, ratings, openNow, kind, gmaps } = best.q.tags;
+      Object.assign(p.tags, { rating, ratings, openNow, kind, gmaps });
+    }
+  }
+  const extra = points.filter(q => !used.has(q.id) && !r.near[i].some(h => h.p.id === q.id))
+    .map(q => ({ p: q, d: haversine(r, q) })).filter(h => h.d <= c.radius).sort((a, b) => a.d - b.d);
+  (r.gNear ||= [])[i] = { extra };
+}
+
 // Zusatzinfos, die unter dem ausgewählten Treffer in der Liste aufklappen
 function detailsContent(r) {
   const tg = r.tags;
@@ -3464,19 +3528,7 @@ function detailsContent(r) {
   if (tg.opening_hours) box.append(el('div', { textContent: '🕑 ' + tg.opening_hours }));
   if (tg.openNow != null) box.append(el('div', { textContent: tg.openNow ? t('🕑 Jetzt geöffnet', '🕑 Open now') : t('🕑 Jetzt geschlossen', '🕑 Closed now') }));
   // Je Bedingung die nächsten Orte mit ihren Zusatzinfos, damit man abwägen kann
-  r.near.forEach((hits, i) => {
-    const c = current.conds[i];
-    const sec = el('div', { className: 'near-sec' }, el('div', { className: 'near-head' },
-      el('span', { className: 'dot', style: { background: c.color, width: '9px', height: '9px', marginRight: '5px' } }),
-      c.label + (hits.length > 1 ? t(` (${hits.length} im Umkreis)`, ` (${hits.length} nearby)`) : '')));
-    hits.slice(0, NEAR_SHOWN).forEach(({ p, d }) => sec.append(nearLine(p, d, c)));
-    if (hits.length > NEAR_SHOWN) {
-      const more = el('button', { type: 'button', className: 'link-btn', textContent: t(`+ ${hits.length - NEAR_SHOWN} weitere`, `+ ${hits.length - NEAR_SHOWN} more`),
-        onclick: e => { e.stopPropagation(); more.replaceWith(...hits.slice(NEAR_SHOWN).map(({ p, d }) => nearLine(p, d, c))); } });
-      sec.append(more);
-    }
-    box.append(sec);
-  });
+  r.near.forEach((hits, i) => box.append(nearSection(r, i)));
   const phone = tg.phone || tg['contact:phone'];
   const links = el('div', { className: 'links' });
   const gq = tg.name ? `${tg.name}, ${address(tg) || `${r.lat},${r.lon}`}` : `${r.lat},${r.lon}`;
