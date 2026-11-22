@@ -2485,7 +2485,7 @@ renderSourceToggle();
 
 // Google „Text Search (New)“: liefert höchstens 60 Treffer (3 Seiten à 20) je Suchbegriff und Gebiet.
 const G_URL = 'https://places.googleapis.com/v1/places:searchText';
-const G_FIELDS_MAIN = 'places.id,places.displayName,places.location,places.formattedAddress,places.primaryTypeDisplayName,' +
+const G_FIELDS_MAIN = 'places.id,places.displayName,places.location,places.formattedAddress,places.primaryTypeDisplayName,places.types,' +
   'places.rating,places.userRatingCount,places.websiteUri,places.googleMapsUri,places.currentOpeningHours.openNow,nextPageToken';
 // Bedingungs-Orte mit denselben Zusatzinfos (Bewertung, geöffnet …), damit man zwischen Treffern abwägen kann.
 // Zählt gleich wie eine Hauptsuche (1 Abfrage je Seite), Google berechnet etwas mehr pro Abfrage.
@@ -2515,6 +2515,7 @@ function googlePoint(p) {
       rating: p.rating, ratings: p.userRatingCount,
       website: p.websiteUri, gmaps: p.googleMapsUri,
       openNow: p.currentOpeningHours?.openNow,
+      gtypes: p.types,
     },
   };
 }
@@ -2788,7 +2789,7 @@ async function googleData(mainCat, conds, bbox) {
     if (db && mainPoints.length && db.some(p => p.length)) {
       const gp = await rateDb();
       gExtraDb = dbConds.map((c, i) => {
-        const rest = mergeGoogle(db[i], gp.get(c.cat) || []);
+        const rest = mergeGoogle(db[i], gp.get(c.cat) || [], q => fitsCat(q, c.cat)).filter(q => fitsCat(q, c.cat));
         db[i].forEach(p => p.gid && gUsed.add(p.gid));
         return rest;
       });
@@ -3497,9 +3498,9 @@ function poiMarker(p, c, gOnly = false) {
 
 // Google-Bewertung, Art usw. den Orten aus der Datenbank (OpenStreetMap) zuordnen – über Name und Lage.
 // Liefert die Google-Orte, die keinem Datenbank-Ort entsprechen.
-function mergeGoogle(dbPts, gPts, taken = new Set()) {
+function mergeGoogle(dbPts, gPts, fits = () => true) {
   const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9äöüß]+/g, '');
-  const used = new Set(taken);
+  const used = new Set();
   dbPts.forEach(p => { if (p.gid) used.add(p.gid); });
   // Erst gleiche Namen (bis 120 m), dann namenlose Orte nur über die Lage (bis 25 m)
   for (const byName of [true, false]) {
@@ -3510,7 +3511,7 @@ function mergeGoogle(dbPts, gPts, taken = new Set()) {
       for (const q of gPts) {
         if (used.has(q.id)) continue;
         const d = haversine(p, q), qn = norm(q.tags.name);
-        const ok = byName ? n && qn && (qn.includes(n) || n.includes(qn)) && d < 120 : !(n && qn) && d < 25;
+        const ok = byName ? n && qn && (qn.includes(n) || n.includes(qn)) && d < 120 : !(n && qn) && d < 25 && fits(q); // ohne Namen: nur Orte der passenden Art
         if (ok && (!best || d < best.d)) best = { q, d };
       }
       if (best) {
@@ -3522,6 +3523,31 @@ function mergeGoogle(dbPts, gPts, taken = new Set()) {
     }
   }
   return gPts.filter(q => !used.has(q.id));
+}
+
+// Google-Ortstypen je Kategorie: Googles Textsuche liefert auch lose Passendes (z. B. bei „Eisdiele“ den Hauptplatz).
+const GTYPES = {
+  Restaurant: ['restaurant'], 'Café': ['cafe', 'coffee_shop'], Biergarten: ['beer_garden', 'pub', 'bar', 'brewery'],
+  Imbiss: ['fast_food_restaurant', 'meal_takeaway', 'sandwich_shop'], Eisdiele: ['ice_cream_shop'], Bar: ['bar', 'pub', 'wine_bar', 'cocktail_bar'],
+  Hotel: ['hotel', 'lodging', 'motel', 'guest_house', 'bed_and_breakfast', 'hostel', 'inn'], Campingplatz: ['campground', 'rv_park'],
+  Wohnmobilstellplatz: ['rv_park', 'campground'], 'Bäckerei': ['bakery'], Metzgerei: ['butcher_shop'], Supermarkt: ['supermarket', 'grocery_store'],
+  Drogerie: ['drugstore'], 'Getränkemarkt': ['liquor_store'], Baumarkt: ['hardware_store', 'home_improvement_store'], Buchhandlung: ['book_store'],
+  Blumenladen: ['florist'], Kiosk: ['convenience_store'], Friseur: ['hair_salon', 'hair_care', 'barber_shop'], Fahrradladen: ['bicycle_store'],
+  Spielplatz: ['playground'], 'E-Ladesäule': ['electric_vehicle_charging_station'], Parkplatz: ['parking'], Taxistand: ['taxi_stand'],
+  Haltestelle: ['bus_stop', 'bus_station', 'transit_station', 'light_rail_station', 'subway_station', 'train_station'], Bahnhof: ['train_station'],
+  Park: ['park'], Hundewiese: ['dog_park'], Toilette: ['public_bathroom'], Apotheke: ['pharmacy'], Arzt: ['doctor', 'medical_clinic'],
+  Zahnarzt: ['dentist', 'dental_clinic'], Krankenhaus: ['hospital', 'general_hospital'], Geldautomat: ['atm'], Bank: ['bank'], Post: ['post_office'],
+  Tankstelle: ['gas_station'], Schwimmbad: ['swimming_pool'], Fitnessstudio: ['gym', 'fitness_center'], Sportplatz: ['athletic_field', 'sports_complex'],
+  Kindergarten: ['preschool', 'child_care_agency'], Schule: ['school', 'primary_school', 'secondary_school'], Bibliothek: ['library'],
+  Kino: ['movie_theater'], Museum: ['museum'], Kirche: ['church', 'place_of_worship'], Polizei: ['police'],
+};
+// Passt ein Google-Ort zur Kategorie? Über Googles Ortstyp oder Stichwort im Namen bzw. in der Art.
+function fitsCat(q, catLabel) {
+  const cat = CATEGORIES.find(c => c.label === catLabel);
+  if (!cat) return true;
+  if (q.tags.gtypes?.some(ty => GTYPES[catLabel]?.includes(ty))) return true;
+  const tokens = tokenize(`${q.tags.name || ''} ${q.tags.kind || ''}`);
+  return cat.kw.some(kw => kwHit(tokens, kw));
 }
 
 // Bester Ort einer Bedingung: höchste Google-Bewertung (wenig Bewertungen zählen weniger), sonst der nächste
@@ -3603,8 +3629,8 @@ function applyGoogleNear(r, i, points) {
   const c = current.conds[i];
   const known = new Set([...r.near[i], ...(r.extra?.[i] || [])].map(h => h.p.id));
   const fresh = points.filter(q => !known.has(q.id) && !current.pools?.gUsed?.has(q.id));
-  const add = mergeGoogle(r.near[i].map(h => h.p), fresh)
-    .filter(q => q.id !== r.id).map(q => ({ p: q, d: haversine(r, q) })).filter(h => h.d <= c.radius);
+  const add = mergeGoogle(r.near[i].map(h => h.p), fresh, q => !c.cat || fitsCat(q, c.cat))
+    .filter(q => q.id !== r.id && (!c.cat || fitsCat(q, c.cat))).map(q => ({ p: q, d: haversine(r, q) })).filter(h => h.d <= c.radius);
   (r.extra ||= [])[i] = [...(r.extra[i] || []), ...add];
   (r.gLoaded ||= [])[i] = true;
   return add;

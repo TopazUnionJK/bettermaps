@@ -43,7 +43,7 @@ const ALLOWED_ORIGINS = [
 
 // Nur diese Feldsätze dürfen angefragt werden – so bleibt der Google-Tarif unter Kontrolle.
 const FIELDS: Record<string, string> = {
-  main: 'places.id,places.displayName,places.location,places.formattedAddress,places.primaryTypeDisplayName,' +
+  main: 'places.id,places.displayName,places.location,places.formattedAddress,places.primaryTypeDisplayName,places.types,' +
     'places.rating,places.userRatingCount,places.websiteUri,places.googleMapsUri,places.currentOpeningHours.openNow,nextPageToken',
   near: 'places.id,places.displayName,places.location,nextPageToken',
 };
