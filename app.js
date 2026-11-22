@@ -369,8 +369,8 @@ function renderAccount() {
   const planName = account && ({ plus: 'Plus', pro: 'Pro' }[account.plan] || t('Kostenlos', 'Free'));
   $('#acctState').textContent = account ? `${planName} · ${account.used}/${account.limit} ${t('im Monat', 'this month')}` : email;
   $('#acctInfo').textContent = t(`Angemeldet als ${email}.`, `Signed in as ${email}.`) + (account
-    ? t(` Tarif: ${planName}. Diesen Monat ${account.used} von ${account.limit} Google-Abfragen genutzt (eine Suche braucht meist 1 bis 3; Bedingungen wie Spielplatz oder Ladesäule kosten nichts, nur Freitext-Bedingungen zählen extra). Mit OpenStreetMap suchst du immer unbegrenzt.`,
-      ` Plan: ${planName}. ${account.used} of ${account.limit} Google queries used this month (a search usually needs 1 to 3; conditions like playground or EV charger are free, only free-text conditions count extra). OpenStreetMap searches are always unlimited.`)
+    ? t(` Tarif: ${planName}. Diesen Monat ${account.used} von ${account.limit} Google-Abfragen genutzt (eine Suche braucht meist 1 bis 3; jede Bedingung kostet 1 bis 3 weitere – bei Bedingungen wie Spielplatz für die Google-Bewertungen). Mit OpenStreetMap suchst du immer unbegrenzt.`,
+      ` Plan: ${planName}. ${account.used} of ${account.limit} Google queries used this month (a search usually needs 1 to 3; each condition adds 1 to 3 – for conditions like playground to fetch Google ratings). OpenStreetMap searches are always unlimited.`)
     : '');
 }
 
@@ -864,8 +864,33 @@ async function googleData(mainCat, conds, bbox) {
   // Pools der Bedingungen zu den Haupttreffern; bei „Weitere laden“ erneut (Datenbank kostet nichts,
   // Google-Ergebnisse kommen aus dem Zwischenspeicher).
   const extra = []; // Datenbank deckt das Gebiet nicht ab: diese Bedingungen doch bei Google
+  // Datenbank-Orte haben keine Bewertung: je Bedingung einmal im Gebiet bei Google nachsehen (1–3 Abfragen).
+  // Schlägt das fehl oder reicht das Kontingent nicht, bleibt es ohne Bewertungen.
+  // Gleiche Kategorie mit mehreren Radien nur einmal (größter Radius); nur wenn das Kontingent sicher reicht.
+  let rated = null;
+  const rateDb = () => (rated ||= (async () => {
+    const byCat = new Map();
+    for (const c of dbConds) byCat.set(c.cat, Math.max(byCat.get(c.cat) || 0, c.radius));
+    const left = activeSource === 'cloud' && account ? account.limit - account.used : Infinity;
+    if (left < 3 * byCat.size + 1) return new Map(); // 1 Abfrage für „Weitere laden“ übrig lassen
+    const got = await Promise.all([...byCat].map(async ([cat, r]) => {
+      const c = dbConds.find(x => x.cat === cat);
+      try { return [cat, (await googleTerm(c.label, expandBbox(bbox, r), G_FIELDS_NEAR, false)).points]; } catch { return [cat, []]; }
+    }));
+    return new Map(got);
+  })());
   async function finish(mainPoints) {
     let db = await dbPools(mainPoints, dbConds);
+    let gExtraDb = dbConds.map(() => []);
+    const gUsed = new Set(); // Google-Orte, die einem Datenbank-Ort zugeordnet sind
+    if (db && mainPoints.length && db.some(p => p.length)) {
+      const gp = await rateDb();
+      gExtraDb = dbConds.map((c, i) => {
+        const rest = mergeGoogle(db[i], gp.get(c.cat) || []);
+        db[i].forEach(p => p.gid && gUsed.add(p.gid));
+        return rest;
+      });
+    }
     if (!db) {
       extra.length = 0;
       extra.push(...await Promise.all(dbConds.map(term)));
@@ -873,6 +898,8 @@ async function googleData(mainCat, conds, bbox) {
     }
     const gPools = gs.map(g => g.points);
     const pools = conds.map((c, i) => (viaDb[i] ? db : gPools).shift());
+    pools.gExtra = conds.map((c, i) => (viaDb[i] ? gExtraDb.shift() : []));
+    pools.gUsed = gUsed;
     return { mains: mainPoints, pools, dbCapped: db.capped || [] };
   }
   const res = await finish(m.points);
@@ -1517,7 +1544,11 @@ function matchResults(mains, pools, conds, me) {
         if (!hits.length) ok = false;
         else near.push(hits.sort((a, b) => a.d - b.d));
       }
-      if (ok) results.push({ ...m, near, score: near.reduce((s, h) => s + h[0].d, 0) });
+      if (!ok) continue;
+      // Google-Orte, die die Datenbank nicht kennt (nur zum Anzeigen, nicht für die Bedingung)
+      const extra = pools.gExtra && conds.map((c, i) => (pools.gExtra[i] || []).filter(q => q.id !== m.id)
+        .map(q => ({ p: q, d: haversine(m, q) })).filter(h => h.d <= c.radius));
+      results.push({ ...m, near, extra, score: near.reduce((s, h) => s + h[0].d, 0) });
     }
     if (me) {
       // um mich herum: nächstgelegene zuerst
@@ -1543,7 +1574,6 @@ function address(tags) {
 
 const ratingText = g => (g.rating ? `★ ${g.rating.toFixed(1).replace('.', t(',', '.'))}${g.ratings ? ` (${g.ratings})` : ''}` : '');
 
-const NEAR_SHOWN = 3;
 // Ein Bedingungs-Ort in den Zusatzinfos: Entfernung, Name (Link zu Google Maps), Art, Bewertung, geöffnet
 function nearLine(p, d, c) {
   const tg = p.tags || {};
@@ -1556,77 +1586,126 @@ function nearLine(p, d, c) {
     info ? el('span', { className: 'near-info', textContent: ' · ' + info }) : null);
 }
 
-// Bedingungs-Ort als kleiner farbiger Punkt auf der Karte
-function poiMarker(p, c) {
-  L.circleMarker([p.lat, p.lon], { radius: 5, color: '#fff', weight: 1.5, fillColor: c.color, fillOpacity: 1, bubblingMouseEvents: false })
+// Bedingungs-Ort als kleiner farbiger Punkt auf der Karte (Google-Orte, die die Datenbank nicht kennt, mit hellem Kern)
+function poiMarker(p, c, gOnly = false) {
+  L.circleMarker([p.lat, p.lon], { radius: 5, color: gOnly ? c.color : '#fff', weight: gOnly ? 2.5 : 1.5, fillColor: gOnly ? '#fff' : c.color, fillOpacity: 1, bubblingMouseEvents: false })
     .bindTooltip(() => c.label + (p.tags.name ? ': ' + p.tags.name : '') + (ratingText(p.tags) ? ' · ' + ratingText(p.tags) : ''))
     .addTo(poiLayer);
 }
 
+// Google-Bewertung, Art usw. den Orten aus der Datenbank (OpenStreetMap) zuordnen – über Name und Lage.
+// Liefert die Google-Orte, die keinem Datenbank-Ort entsprechen.
+function mergeGoogle(dbPts, gPts, taken = new Set()) {
+  const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9äöüß]+/g, '');
+  const used = new Set(taken);
+  dbPts.forEach(p => { if (p.gid) used.add(p.gid); });
+  // Erst gleiche Namen (bis 120 m), dann namenlose Orte nur über die Lage (bis 25 m)
+  for (const byName of [true, false]) {
+    for (const p of dbPts) {
+      if (p.id.startsWith('g/') || p.gid) continue;
+      const n = norm(p.tags.name || p.tags.brand);
+      let best = null;
+      for (const q of gPts) {
+        if (used.has(q.id)) continue;
+        const d = haversine(p, q), qn = norm(q.tags.name);
+        const ok = byName ? n && qn && (qn.includes(n) || n.includes(qn)) && d < 120 : !(n && qn) && d < 25;
+        if (ok && (!best || d < best.d)) best = { q, d };
+      }
+      if (best) {
+        used.add(best.q.id);
+        p.gid = best.q.id;
+        const { rating, ratings, openNow, kind, gmaps } = best.q.tags;
+        Object.assign(p.tags, { rating, ratings, openNow, kind, gmaps });
+      }
+    }
+  }
+  return gPts.filter(q => !used.has(q.id));
+}
+
+// Bester Ort einer Bedingung: höchste Google-Bewertung (wenig Bewertungen zählen weniger), sonst der nächste
+const ratingScore = tg => (tg.rating ? tg.rating - 1.5 / Math.sqrt((tg.ratings || 0) + 1) : -Infinity);
+
 function nearSection(r, i) {
-  const hits = r.near[i], c = current.conds[i];
+  const c = current.conds[i];
+  const all = [...r.near[i], ...(r.extra?.[i] || [])].sort((a, b) => a.d - b.d);
+  let top = all[0];
+  for (const h of all) if (ratingScore(h.p.tags) > ratingScore(top.p.tags)) top = h;
+  const rest = all.filter(h => h !== top);
   const sec = el('div', { className: 'near-sec' }, el('div', { className: 'near-head' },
     el('span', { className: 'dot', style: { background: c.color, width: '9px', height: '9px', marginRight: '5px' } }),
-    c.label + (hits.length > 1 ? t(` (${hits.length} im Umkreis)`, ` (${hits.length} nearby)`) : '')));
-  hits.slice(0, NEAR_SHOWN).forEach(({ p, d }) => sec.append(nearLine(p, d, c)));
-  if (hits.length > NEAR_SHOWN) {
-    const more = el('button', { type: 'button', className: 'link-btn', textContent: t(`+ ${hits.length - NEAR_SHOWN} weitere`, `+ ${hits.length - NEAR_SHOWN} more`),
-      onclick: e => { e.stopPropagation(); more.replaceWith(...hits.slice(NEAR_SHOWN).map(({ p, d }) => nearLine(p, d, c))); } }); // Knopf ist danach weg – sonst wählt die Zeile neu aus
-    sec.append(more);
-  }
-  // Orte aus der Datenbank (OpenStreetMap) haben keine Google-Bewertung: auf Wunsch mit einer Abfrage nachladen
-  const g = r.gNear?.[i];
-  if (g?.extra.length) {
-    sec.append(el('div', { className: 'near-line near-info', textContent: t('Nur bei Google:', 'Only on Google:') }));
-    g.extra.forEach(({ p, d }) => sec.append(nearLine(p, d, c)));
-  }
-  if (!g && current.source === 'google' && hits.some(h => !h.p.id.startsWith('g/'))) {
-    const btn = el('button', { type: 'button', className: 'link-btn', textContent: t('Google-Bewertungen laden (1 Abfrage)', 'Load Google ratings (1 query)'),
+    c.label + (all.length > 1 ? t(` (${all.length} im Umkreis)`, ` (${all.length} nearby)`) : '')));
+  sec.append(nearLine(top.p, top.d, c));
+  // Noch Orte ohne Bewertung (z. B. Google lieferte im Gebiet nur 60): mit einer Abfrage um den Treffer nachladen
+  const canLoad = !r.gLoaded?.[i] && current.source === 'google' && all.some(h => !h.p.id.startsWith('g/') && h.p.tags.rating == null);
+  if (rest.length || canLoad) {
+    const btn = el('button', { type: 'button', className: 'link-btn',
+      textContent: rest.length ? t(`Weitere laden (${rest.length})`, `Load more (${rest.length})`) : t('Weitere bei Google laden (1 Abfrage)', 'Load more from Google (1 query)'),
       onclick: async e => {
-        e.stopPropagation();
-        btn.disabled = true;
-        btn.textContent = t('Lade …', 'Loading …');
-        try {
-          await loadGoogleNear(r, i);
-          sec.replaceWith(nearSection(r, i));
-        } catch (err) {
-          btn.replaceWith(el('div', { className: 'near-line error', textContent: err.message || String(err) }));
+        e.stopPropagation(); // Knopf ist danach weg – sonst wählt die Zeile neu aus
+        if (!rest.length) {
+          btn.disabled = true;
+          btn.textContent = t('Lade …', 'Loading …');
+          try { await loadGoogleNear(r, i); } catch (err) {
+            btn.replaceWith(el('div', { className: 'near-line error', textContent: err.message || String(err) }));
+            return;
+          }
+          const fresh = nearSection(r, i);
+          sec.replaceWith(fresh);
+          fresh.querySelector('.link-btn')?.click(); // gleich aufgeklappt zeigen
+          return;
         }
+        const lines = rest.map(({ p, d }) => nearLine(p, d, c));
+        if (canLoad) {
+          const g = el('button', { type: 'button', className: 'link-btn', textContent: t('Weitere bei Google laden (1 Abfrage)', 'Load more from Google (1 query)'),
+            onclick: async ev => {
+              ev.stopPropagation();
+              g.disabled = true;
+              g.textContent = t('Lade …', 'Loading …');
+              try { await loadGoogleNear(r, i); } catch (err) {
+                g.replaceWith(el('div', { className: 'near-line error', textContent: err.message || String(err) }));
+                return;
+              }
+              const fresh = nearSection(r, i);
+              sec.replaceWith(fresh);
+              fresh.querySelector('.link-btn')?.click();
+            } });
+          lines.push(g);
+        }
+        btn.replaceWith(...lines);
       } });
     sec.append(btn);
   }
   return sec;
 }
 
-// Eine Google-Seite (20 nächste) um den Treffer holen und den Datenbank-Orten Bewertung usw. zuordnen
+// Eine Google-Seite (20 nächste) um den Treffer: Bewertungen zuordnen, neue Orte ergänzen (auch auf der Karte).
+// Das Ergebnis bleibt an der Suche hängen, damit „Weitere laden“ der Hauptsuche es nicht verliert.
 async function loadGoogleNear(r, i) {
-  const c = current.conds[i];
+  const c = current.conds[i], mine = current, prev = activeSource;
   activeSource = current.gSource; // eigener Schlüssel oder Backend, wie bei der Suche
-  const { points } = await googleNearestPage(c.label, { lat: r.lat, lon: r.lon, r: c.radius });
-  const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9äöüß]+/g, '');
-  const used = new Set();
-  for (const { p } of r.near[i]) {
-    if (p.id.startsWith('g/') || p.tags.rating != null) continue;
-    const n = norm(p.tags.name || p.tags.brand);
-    let best = null;
-    for (const q of points) {
-      if (used.has(q.id)) continue;
-      const d = haversine(p, q), qn = norm(q.tags.name);
-      const named = n && qn && (qn.includes(n) || n.includes(qn));
-      if ((named && d < 120) || d < 25) if (!best || d < best.d) best = { q, d };
-    }
-    if (best) {
-      used.add(best.q.id);
-      const { rating, ratings, openNow, kind, gmaps } = best.q.tags;
-      Object.assign(p.tags, { rating, ratings, openNow, kind, gmaps });
-    }
+  let points;
+  try {
+    ({ points } = await googleNearestPage(c.label, { lat: r.lat, lon: r.lon, r: c.radius }));
+  } finally {
+    activeSource = prev;
   }
-  const extra = points.filter(q => !used.has(q.id) && !r.near[i].some(h => h.p.id === q.id))
-    .map(q => ({ p: q, d: haversine(r, q) })).filter(h => h.d <= c.radius).sort((a, b) => a.d - b.d);
-  (r.gNear ||= [])[i] = { extra };
-  const shown = new Set(); // auch auf der Karte zeigen (ein Ort kann bei mehreren Treffern auftauchen)
+  if (current !== mine) return; // inzwischen neu gesucht
+  (current.gNear ||= new Map()).set(r.id + '|' + i, points);
+  const add = applyGoogleNear(r, i, points);
+  const shown = new Set(); // ein Ort kann bei mehreren Treffern auftauchen
   poiLayer.eachLayer(m => shown.add(m.getLatLng().lat.toFixed(6) + ',' + m.getLatLng().lng.toFixed(6)));
-  extra.forEach(({ p }) => { if (!shown.has(p.lat.toFixed(6) + ',' + p.lon.toFixed(6))) poiMarker(p, c); });
+  add.forEach(({ p }) => { if (!shown.has(p.lat.toFixed(6) + ',' + p.lon.toFixed(6))) poiMarker(p, c, true); });
+}
+
+function applyGoogleNear(r, i, points) {
+  const c = current.conds[i];
+  const known = new Set([...r.near[i], ...(r.extra?.[i] || [])].map(h => h.p.id));
+  const fresh = points.filter(q => !known.has(q.id) && !current.pools?.gUsed?.has(q.id));
+  const add = mergeGoogle(r.near[i].map(h => h.p), fresh)
+    .filter(q => q.id !== r.id).map(q => ({ p: q, d: haversine(r, q) })).filter(h => h.d <= c.radius);
+  (r.extra ||= [])[i] = [...(r.extra[i] || []), ...add];
+  (r.gLoaded ||= [])[i] = true;
+  return add;
 }
 
 // Zusatzinfos, die unter dem ausgewählten Treffer in der Liste aufklappen
@@ -1685,13 +1764,20 @@ function render(totalMain, where, { keepView = false } = {}) {
   }
 
   // Umgebungs-Punkte, die zu mindestens einem Treffer gehören
+  // Schon nachgeladene Google-Orte (vor „Weitere laden“ der Hauptsuche) wieder anwenden
+  current.gNear?.forEach((pts, key) => {
+    const cut = key.lastIndexOf('|'), r = results.find(x => x.id === key.slice(0, cut));
+    if (r) applyGoogleNear(r, +key.slice(cut + 1), pts);
+  });
   const seen = new Set();
-  results.forEach(r => r.near.forEach((hits, i) => hits.forEach(({ p }) => {
+  const addPoi = gOnly => (hits, i) => hits.forEach(({ p }) => {
     const key = i + '|' + p.id;
     if (seen.has(key)) return;
     seen.add(key);
-    poiMarker(p, conds[i]);
-  })));
+    poiMarker(p, conds[i], gOnly);
+  });
+  results.forEach(r => r.near.forEach(addPoi(false)));
+  results.forEach(r => r.extra?.forEach(addPoi(true)));
 
   const list = $('#results');
   list.replaceChildren();
